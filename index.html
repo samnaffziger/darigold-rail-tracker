@@ -760,7 +760,7 @@ function renderTab1(){
     const lO=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite');
     const lW=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='waiting');
     const lH=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='held');
-    const lI=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='inbound');
+    const lI=ALL_CARS.filter(c=>c.loop===site&&c.section==='EMPTY'&&c.emptyStatus==='inbound');
     const lS=SHIP_HISTORY_7D.filter(c=>c.loop===site);
     const tot=lL.length+lO.length+lW.length+lH.length+lI.length;
     const hasCrit=lO.some(c=>c.dwell>=30)||lW.some(c=>c.dwell>=30);
