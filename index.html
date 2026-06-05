@@ -464,19 +464,56 @@ async function parseAndSave(ws, fname){
     if(f==='EMPTY CARS'){sec='EMPTY';return;}
     if(f==='SHOP CARS'){sec='SHOP';return;}
     if(!f.startsWith('CRYX'))return;
+
+    // Auto-detect column layout by header count
+    // 14-col (new): [0]ID [1]Origin [2]BOL [3]Waybill [4]Consignee [5]Dest [6]CurLoc
+    //               [7]L/E [8]LastEvent [9]CLM [10]Carrier [11]ETA [12]Dwell [13]Note
+    // 15-col (old): same but with extra col at [3], everything else shifts +1
+    const firstRow=rows[1]||[];
+    const is14col=firstRow.length<=14;
+    const CI={
+      waybill: is14col?3:4,
+      consignee: is14col?4:5,
+      dest: is14col?5:6,
+      curLoc: is14col?6:7,
+      clm: is14col?9:10,
+      carrier: is14col?10:11,
+      eta: is14col?11:12,
+      dwell: is14col?12:13,
+      note: is14col?13:14
+    };
+
     let wbDt=null;
-    const wbR=row[4];
+    const wbR=row[CI.waybill];
     if(wbR){if(wbR instanceof Date)wbDt=wbR;else{const d=new Date(wbR);if(!isNaN(d))wbDt=d;}}
+
     let etaStr='',etaDt=null;
-    const etaR=row[12];
-    if(etaR){if(etaR instanceof Date){etaDt=etaR;etaStr=etaR.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}else etaStr=String(etaR);}
-    const dest=String(row[6]||'').toUpperCase().trim();
+    const etaR=row[CI.eta];
+    if(etaR){
+      if(etaR instanceof Date){
+        etaDt=etaR;
+        etaStr=etaR.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      } else {
+        const s=String(etaR).trim();
+        const d=new Date(s);
+        if(!isNaN(d)&&s.match(/\d{4}/)){
+          etaDt=d;
+          etaStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        } else {
+          etaStr=s;
+        }
+      }
+    }
+
+    const dest=String(row[CI.dest]||'').toUpperCase().trim();
     const origin=String(row[1]||'').toUpperCase().trim();
-    const clm=String(row[10]||'').trim().toUpperCase();
+    const clm=String(row[CI.clm]||'').trim().toUpperCase();
+
     let loop=null;
     if(sec==='SHOP')loop='SHOP';
     else if(sec==='LOADED')loop=SITES.find(s=>origin.includes(s.split(',')[0]))||null;
     else loop=SITES.find(s=>dest.includes(s.split(',')[0]))||null;
+
     let emptyStatus='inbound';
     if(sec==='EMPTY'){
       if(clm==='Z')emptyStatus='onsite';
@@ -484,12 +521,13 @@ async function parseAndSave(ws, fname){
       else if(clm==='H')emptyStatus='held';
       else emptyStatus='inbound';
     }
+
     cars.push({
       id:String(row[0]||'').trim(), origin:row[1]||'', bol:row[2]||'',
-      waybillDate:wbDt, consignee:row[5]||'', destination:row[6]||'',
-      currentLoc:String(row[7]||'').trim(), section:sec, clm,
-      carrier:row[11]||'', etaStr, etaDt,
-      dwell:parseFloat(row[13])||0, note:row[14]||'', loop, emptyStatus
+      waybillDate:wbDt, consignee:row[CI.consignee]||'', destination:row[CI.dest]||'',
+      currentLoc:String(row[CI.curLoc]||'').trim(), section:sec, clm,
+      carrier:row[CI.carrier]||'', etaStr, etaDt,
+      dwell:parseFloat(row[CI.dwell])||0, note:row[CI.note]||'', loop, emptyStatus
     });
   });
 
