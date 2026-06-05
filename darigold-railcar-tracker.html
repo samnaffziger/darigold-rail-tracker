@@ -326,6 +326,22 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
   </div>
 </div>
 
+<!-- Password check — must be non-module so onclick can reach it -->
+<script>
+function checkPw(){
+  const val=document.getElementById('pw-input').value;
+  if(val==='rail'){
+    sessionStorage.setItem('fleet-auth','1');
+    document.getElementById('pw-gate').style.display='none';
+    window._fleetInit && window._fleetInit();
+  } else {
+    document.getElementById('pw-error').style.display='block';
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+  }
+}
+</script>
+
 <!-- Supabase JS client -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -911,21 +927,8 @@ function switchTab(id){
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===id));
 }
 
-// ── PASSWORD GATE ──
-function checkPw(){
-  const val=document.getElementById('pw-input').value;
-  if(val==='rail'){
-    sessionStorage.setItem('fleet-auth','1');
-    document.getElementById('pw-gate').style.display='none';
-    init();
-  } else {
-    document.getElementById('pw-error').style.display='block';
-    document.getElementById('pw-input').value='';
-    document.getElementById('pw-input').focus();
-  }
-}
-
 // ── START ──
+window._fleetInit = init;
 if(sessionStorage.getItem('fleet-auth')==='1'){
   document.getElementById('pw-gate').style.display='none';
   init();
