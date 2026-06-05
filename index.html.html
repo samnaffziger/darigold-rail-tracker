@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Darigold Railcar Fleet Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --bg4:#21262d;
+  --border:#30363d; --border-hi:#484f58;
+  --text:#e6edf3; --muted:#7d8590; --dim:#484f58;
+  --green:#3fb950; --green-bg:#0d2e1a; --green-bd:#238636;
+  --blue:#58a6ff; --blue-bg:#0c1e35; --blue-bd:#1f6feb;
+  --purple:#bc8cff; --purple-bg:#1e1433; --purple-bd:#6e40c9;
+  --orange:#f0883e; --orange-bg:#2d1a08; --orange-bd:#bd561d;
+  --yellow:#d29922; --yellow-bg:#2d2008; --yellow-bd:#7d5e00;
+  --red:#f85149; --red-bg:#2d0f0f; --red-bd:#6e2020;
+  --sidebar-w:190px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;min-height:100vh;display:flex;flex-direction:column;}
+
+/* ── HEADER ── */
+.hdr{background:var(--bg2);border-bottom:1px solid var(--border);padding:11px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;}
+.hdr-l{display:flex;align-items:center;gap:10px;}
+.logo{display:flex;align-items:center;gap:7px;}
+.logo-ic{width:24px;height:24px;background:var(--blue);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:13px;}
+.logo-tx{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.07em;}
+.vd{width:1px;height:16px;background:var(--border);}
+.rpt-date{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);}
+.hdr-r{display:flex;align-items:center;gap:6px;}
+.hpill{font-family:'IBM Plex Mono',monospace;font-size:10px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:2px 8px;color:var(--muted);}
+.hpill span{color:var(--text);font-weight:600;}
+
+/* ── CONFIG BANNER (shown until Supabase is configured) ── */
+#config-banner{background:var(--yellow-bg);border-bottom:1px solid var(--yellow-bd);padding:8px 20px;font-size:11px;color:var(--yellow);display:flex;align-items:center;gap:8px;}
+#config-banner a{color:var(--yellow);text-decoration:underline;cursor:pointer;}
+#config-banner code{font-family:'IBM Plex Mono',monospace;background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px;}
+
+/* ── BODY LAYOUT ── */
+.body-wrap{display:flex;flex:1;min-height:0;}
+
+/* ── SIDEBAR ── */
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:49px;height:calc(100vh - 49px);overflow-y:auto;}
+.sb-section{padding:12px 14px 6px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);}
+.sb-drop{margin:0 10px 10px;border:1px dashed var(--border-hi);border-radius:5px;padding:9px 10px;text-align:center;cursor:pointer;transition:.15s;background:var(--bg3);}
+.sb-drop:hover,.sb-drop.over{border-color:var(--blue);background:rgba(88,166,255,.05);}
+.sb-drop input{display:none;}
+.sb-drop-tx{font-size:10px;color:var(--muted);line-height:1.5;}
+.sb-drop-tx strong{color:var(--blue);display:block;margin-bottom:2px;}
+.sb-status{margin:0 10px 10px;font-size:10px;border-radius:4px;padding:5px 8px;display:none;}
+.sb-status.saving{background:var(--blue-bg);border:1px solid var(--blue-bd);color:var(--blue);}
+.sb-status.saved{background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);}
+.sb-status.error{background:var(--red-bg);border:1px solid var(--red-bd);color:var(--red);}
+
+/* calendar */
+.cal-month{padding:8px 12px 4px;}
+.cal-month-lbl{font-size:10px;font-weight:600;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em;}
+.cal-day{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;cursor:pointer;transition:.12s;margin-bottom:1px;}
+.cal-day:hover{background:var(--bg3);}
+.cal-day.active-day{background:rgba(88,166,255,.12);border:1px solid var(--blue-bd);}
+.cal-day.weekend{opacity:.32;cursor:default;pointer-events:none;}
+.cal-day-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--dim);}
+.cal-day.loaded .cal-day-dot{background:var(--green);}
+.cal-day.active-day .cal-day-dot{box-shadow:0 0 0 2px rgba(88,166,255,.4);}
+.cal-day-label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex:1;}
+.cal-day.loaded .cal-day-label{color:var(--text);}
+.cal-day.active-day .cal-day-label{color:var(--blue);}
+.cal-check{font-size:10px;color:var(--green);}
+.cal-day-tag{font-size:8px;color:var(--dim);flex-shrink:0;}
+.sb-divider{height:1px;background:var(--border);margin:8px 12px;}
+.sb-legend{padding:8px 12px 12px;}
+.sb-legend-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:10px;color:var(--muted);}
+.sb-legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+
+/* ── MAIN ── */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+#ph{text-align:center;padding:60px 20px;color:var(--muted);}
+.ph-ic{font-size:36px;margin-bottom:10px;opacity:.4;}
+.ph-ti{font-size:14px;color:var(--text);margin-bottom:5px;font-weight:500;}
+.ph-su{font-size:11px;}
+
+/* ── TABS ── */
+.tabs{display:flex;padding:0 20px;border-bottom:1px solid var(--border);}
+.tab{padding:9px 14px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--text);border-bottom-color:var(--blue);}
+.tbadge{font-family:'IBM Plex Mono',monospace;font-size:9px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:1px 5px;color:var(--muted);}
+.tab.active .tbadge{color:var(--text);}
+
+/* ── PANELS ── */
+.panel{display:none;padding:16px 20px 30px;overflow-y:auto;}
+.panel.active{display:block;}
+
+/* ── CHANGES STRIP ── */
+.changes-strip{background:var(--purple-bg);border:1px solid var(--purple-bd);border-radius:6px;padding:10px 14px;margin-bottom:14px;}
+.changes-strip-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.changes-strip-title{font-size:11px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.06em;}
+.changes-strip-date{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.changes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+.chg-group{background:rgba(0,0,0,.2);border-radius:4px;padding:8px 10px;}
+.chg-group-lbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;}
+.chg-row{font-size:11px;color:var(--text);margin-bottom:4px;line-height:1.5;}
+.chg-row .chg-id{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.chg-row .chg-detail{color:var(--muted);font-size:11px;}
+.chg-none{font-size:11px;color:var(--dim);font-style:italic;}
+
+/* ── BANNERS ── */
+.banners{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+.banner{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;border-radius:5px;font-size:11px;border:1px solid;line-height:1.5;}
+.banner.crit{background:var(--red-bg);border-color:var(--red-bd);}
+.banner.warn{background:var(--yellow-bg);border-color:var(--yellow-bd);}
+.banner.info{background:var(--blue-bg);border-color:var(--blue-bd);}
+.banner-ic{font-size:13px;flex-shrink:0;margin-top:1px;}
+.banner-tx{flex:1;}
+.banner.crit .banner-tx strong{color:var(--red);}
+.banner.warn .banner-tx strong{color:var(--yellow);}
+.banner.info .banner-tx strong{color:var(--blue);}
+
+/* ── LOOP GRID ── */
+.loops-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.lcard{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.lcard.has-crit{border-color:var(--red-bd);}
+.lcard.has-warn{border-color:var(--yellow-bd);}
+.lcard-hdr{padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:space-between;}
+.lcard-name{font-weight:600;font-size:13px;}
+.lcard-total{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--blue);}
+.lcard-total-lbl{font-size:9px;color:var(--muted);text-align:right;line-height:1.3;}
+.lstats{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--border);}
+.lstat{padding:9px 8px;text-align:center;border-right:1px solid var(--border);}
+.lstat:last-child{border-right:none;}
+.lstat-n{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;line-height:1;}
+.lstat-l{font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;}
+.lstat-s{font-size:8px;color:var(--muted);margin-top:1px;}
+.ls-loaded .lstat-n{color:var(--green);}
+.ls-onsite .lstat-n{color:var(--blue);}
+.ls-wait .lstat-n{color:var(--yellow);}
+.ls-inbound .lstat-n{color:var(--purple);}
+.ls-shipped .lstat-n{color:var(--muted);}
+.dsec-lbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 12px 2px;border-top:1px solid var(--border);}
+.drow{display:flex;align-items:center;padding:4px 12px;border-top:1px solid rgba(48,54,61,.45);font-size:11px;}
+.dr-id{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text);width:105px;flex-shrink:0;}
+.dr-loc{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.dr-eta{font-family:'IBM Plex Mono',monospace;font-size:10px;flex-shrink:0;margin-left:7px;}
+.dr-dwell{font-family:'IBM Plex Mono',monospace;font-size:10px;flex-shrink:0;margin-left:6px;padding:1px 5px;border-radius:3px;border:1px solid transparent;}
+.dr-dwell.ok{color:var(--muted);}
+.dr-dwell.warn{color:var(--yellow);background:var(--yellow-bg);border-color:var(--yellow-bd);}
+.dr-dwell.crit{color:var(--red);background:var(--red-bg);border-color:var(--red-bd);}
+.dr-note{font-size:10px;color:var(--dim);margin-left:7px;flex-shrink:0;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.eta-ok{color:var(--green);}
+.eta-soon{color:var(--green);font-weight:600;}
+.eta-lbl{color:var(--yellow);}
+.eta-del{color:var(--red);}
+.eta-nu{color:var(--muted);}
+.shop-card{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-top:14px;}
+.shop-hdr{padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:space-between;}
+.shop-title{font-weight:600;font-size:13px;color:var(--orange);}
+.shop-n{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--orange);}
+
+/* ── TAB 2 ── */
+.sh-controls{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.sh-label{font-size:11px;color:var(--muted);}
+.date-input{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:5px 9px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;outline:none;transition:.15s;}
+.date-input:focus{border-color:var(--blue);}
+.btn{background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:4px;padding:5px 10px;color:var(--blue);font-size:11px;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:.15s;}
+.btn:hover{background:rgba(88,166,255,.15);}
+.sh-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;}
+.sh-stat{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;text-align:center;}
+.sh-stat-n{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:var(--blue);}
+.sh-stat-l{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:3px;}
+.sh-by-site{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.site-hist-card{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.site-hist-hdr{padding:9px 12px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;justify-content:space-between;align-items:center;}
+.site-hist-name{font-weight:600;font-size:12px;}
+.site-hist-n{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;color:var(--green);}
+.sh-row{display:flex;align-items:center;padding:4px 12px;border-top:1px solid rgba(48,54,61,.45);font-size:11px;gap:0;}
+.sh-row-id{font-family:'IBM Plex Mono',monospace;font-weight:600;width:105px;flex-shrink:0;}
+.sh-row-dest{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sh-row-date{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;margin-left:7px;}
+.sh-row-carrier{font-family:'IBM Plex Mono',monospace;font-size:10px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;color:var(--muted);margin-left:6px;flex-shrink:0;}
+
+/* ── TAB 3 ── */
+.loaded-grid{display:flex;flex-direction:column;gap:10px;}
+.lcar-card{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.lcar-card.arriving-soon{border-color:var(--green-bd);}
+.lcar-card.constructive{border-color:var(--yellow-bd);}
+.lcar-hdr{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg3);}
+.lcar-id{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:13px;}
+.lcar-route{font-size:12px;color:var(--muted);}
+.lcar-route span{color:var(--text);}
+.lcar-loop-tag{font-size:9px;background:var(--blue-bg);border:1px solid var(--blue-bd);color:var(--blue);border-radius:10px;padding:2px 7px;font-weight:600;white-space:nowrap;}
+.lcar-eta-big{text-align:right;}
+.lcar-eta-val{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;}
+.lcar-eta-lbl{font-size:9px;color:var(--muted);text-align:right;margin-top:1px;}
+.lcar-stats{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--border);}
+.lcar-stat{padding:8px 10px;border-right:1px solid var(--border);text-align:center;}
+.lcar-stat:last-child{border-right:none;}
+.lcar-stat-v{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;line-height:1;}
+.lcar-stat-l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
+.lcar-note{padding:7px 14px;font-size:11px;color:var(--muted);line-height:1.5;}
+.lcar-note:empty{display:none;}
+.progress-wrap{padding:8px 14px;border-bottom:1px solid rgba(48,54,61,.3);}
+.progress-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:4px;}
+.progress-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--green);border-radius:2px;}
+.progress-fill.late{background:var(--red);}
+.progress-fill.pending{background:var(--yellow);}
+.empty-st{text-align:center;padding:30px;color:var(--muted);font-size:12px;}
+
+/* spinner */
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:5px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<!-- PASSWORD GATE -->
+<div id="pw-gate" style="
+  position:fixed;inset:0;background:#0d1117;z-index:9999;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <div style="width:28px;height:28px;background:#58a6ff;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:16px;">🚃</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;letter-spacing:.07em;color:#e6edf3;">DARIGOLD FLEET TRACKER</div>
+  </div>
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:28px 32px;text-align:center;min-width:280px;">
+    <div style="font-size:12px;color:#7d8590;margin-bottom:16px;letter-spacing:.03em;">Enter password to continue</div>
+    <input id="pw-input" type="password" placeholder="Password"
+      style="width:100%;background:#0d1117;border:1px solid #484f58;border-radius:5px;padding:8px 12px;
+             color:#e6edf3;font-family:'IBM Plex Mono',monospace;font-size:13px;outline:none;
+             text-align:center;letter-spacing:.1em;"
+    onkeydown="if(event.key==='Enter'){const v=this.value;if(v==='rail'){sessionStorage.setItem('fleet-auth','1');document.getElementById('pw-gate').style.display='none';window._fleetInit&&window._fleetInit();}else{document.getElementById('pw-error').style.display='block';this.value='';this.focus();}}">
+    <div id="pw-error" style="color:#f85149;font-size:11px;margin-top:10px;display:none;">Incorrect password</div>
+    <button onclick="const v=document.getElementById('pw-input').value;if(v==='rail'){sessionStorage.setItem('fleet-auth','1');document.getElementById('pw-gate').style.display='none';window._fleetInit&&window._fleetInit();}else{document.getElementById('pw-error').style.display='block';document.getElementById('pw-input').value='';document.getElementById('pw-input').focus();}"
+      style="margin-top:14px;width:100%;background:#1f6feb;border:1px solid #58a6ff;border-radius:5px;
+             padding:8px;color:#e6edf3;font-size:12px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+             letter-spacing:.05em;">
+      Enter
+    </button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo"><div class="logo-ic">🚃</div><div class="logo-tx">DARIGOLD FLEET TRACKER</div></div>
+    <div class="vd"></div>
+    <div class="rpt-date" id="rpt-date">Loading…</div>
+  </div>
+  <div class="hdr-r">
+    <div class="hpill">Fleet: <span id="hp-total">—</span>/33</div>
+    <div class="hpill">Loaded: <span id="hp-loaded">—</span></div>
+    <div class="hpill">Empty: <span id="hp-empty">—</span></div>
+    <div class="hpill">Shop: <span id="hp-shop">—</span></div>
+  </div>
+</div>
+
+<!-- CONFIG BANNER -->
+<div id="config-banner">
+  ⚙️ <strong>Setup required:</strong> Replace <code>YOUR_SUPABASE_URL</code> and <code>YOUR_SUPABASE_ANON_KEY</code> at the top of the &lt;script&gt; block with your project credentials.
+  &nbsp;|&nbsp; <a onclick="document.getElementById('config-banner').style.display='none'">Dismiss</a>
+</div>
+
+<div class="body-wrap">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-section">Upload Report</div>
+    <div class="sb-drop" id="sb-drop" onclick="document.getElementById('fi').click()">
+      <input type="file" id="fi" accept=".xlsx,.xls">
+      <div class="sb-drop-tx"><strong>Drop or click</strong>Today's .xlsx report</div>
+    </div>
+    <div class="sb-status" id="sb-status"></div>
+
+    <div class="sb-section" style="margin-top:2px;">Report History</div>
+    <div id="cal-container"></div>
+
+    <div class="sb-divider"></div>
+    <div class="sb-legend">
+      <div class="sb-legend-row"><div class="sb-legend-dot" style="background:var(--green)"></div>Uploaded</div>
+      <div class="sb-legend-row"><div class="sb-legend-dot" style="background:var(--border-hi)"></div>Weekend</div>
+      <div class="sb-legend-row"><div class="sb-legend-dot" style="background:var(--dim)"></div>Not yet uploaded</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div id="ph">
+      <div class="ph-ic">📋</div>
+      <div class="ph-ti" id="ph-title">Connecting to database…</div>
+      <div class="ph-su" id="ph-sub">This will only take a moment</div>
+    </div>
+
+    <div id="app" style="display:none;flex-direction:column;flex:1;">
+      <div class="tabs">
+        <div class="tab active" data-tab="t1" onclick="switchTab('t1')">Loop Overview <span class="tbadge" id="tb1">—</span></div>
+        <div class="tab" data-tab="t2" onclick="switchTab('t2')">Shipment History <span class="tbadge" id="tb2">—</span></div>
+        <div class="tab" data-tab="t3" onclick="switchTab('t3')">Loaded Cars <span class="tbadge" id="tb3">—</span></div>
+      </div>
+      <div class="panel active" id="t1">
+        <div id="changes-strip" style="display:none;"></div>
+        <div class="banners" id="banners1"></div>
+        <div class="loops-grid" id="loops-grid"></div>
+        <div class="shop-card" id="shop-card"></div>
+      </div>
+      <div class="panel" id="t2">
+        <div class="sh-controls">
+          <span class="sh-label">Date range:</span>
+          <input type="date" class="date-input" id="sh-from">
+          <span class="sh-label">to</span>
+          <input type="date" class="date-input" id="sh-to">
+          <button class="btn" onclick="renderShipHistory()">Apply</button>
+          <button class="btn" onclick="setRange(7)">Last 7d</button>
+          <button class="btn" onclick="setRange(14)">Last 14d</button>
+          <button class="btn" onclick="setRange(30)">Last 30d</button>
+          <button class="btn" onclick="setRange(60)">Last 60d</button>
+        </div>
+        <div class="sh-summary" id="sh-summary"></div>
+        <div class="sh-by-site" id="sh-by-site"></div>
+      </div>
+      <div class="panel" id="t3">
+        <div class="banners" id="banners3"></div>
+        <div class="loaded-grid" id="loaded-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Password check — must be non-module so onclick can reach it -->
+<script>
+function checkPw(){
+  const val=document.getElementById('pw-input').value;
+  if(val==='rail'){
+    sessionStorage.setItem('fleet-auth','1');
+    document.getElementById('pw-gate').style.display='none';
+    window._fleetInit && window._fleetInit();
+  } else {
+    document.getElementById('pw-error').style.display='block';
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+  }
+}
+</script>
+
+<!-- Supabase JS client -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+// ════════════════════════════════════════════════════
+//  !! CONFIGURE THESE TWO VALUES !!
+//  Supabase project → Settings → API
+// ════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://vlwstqdbsvxgblausxis.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_xm-05_HvGLxYnLtwhZIwrw_Q__1aX--';
+// ════════════════════════════════════════════════════
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const SITES   = ['NAMPA, ID','CONNELL, WA','SUNNYSIDE, WA','AUBURN, WA'];
+const SITE_LBL= {'NAMPA, ID':'Nampa, ID','CONNELL, WA':'Connell, WA','SUNNYSIDE, WA':'Sunnyside, WA','AUBURN, WA':'Auburn, WA'};
+
+let ALL_CARS=[], REPORT_DATE=null, REPORT_DATE_KEY='', LOADED_DATE_SET=new Set(), SHIP_HISTORY_7D=[];
+
+// ── INIT: load most recent date from DB on page open ──
+async function init(){
+  if(SUPABASE_URL==='YOUR_SUPABASE_URL'){
+    document.getElementById('ph-title').textContent='Configure Supabase to get started';
+    document.getElementById('ph-sub').textContent='See the yellow banner above for instructions';
+    document.getElementById('config-banner').style.display='flex';
+    return;
+  }
+  document.getElementById('config-banner').style.display='none';
+  try{
+    // Fetch list of uploaded dates
+    const {data:dates, error:dErr}=await supabase
+      .from('fleet_report_dates')
+      .select('report_date')
+      .order('report_date',{ascending:false});
+    if(dErr)throw dErr;
+
+    LOADED_DATE_SET=new Set((dates||[]).map(r=>r.report_date));
+    buildCalendar();
+
+    if(!dates||dates.length===0){
+      document.getElementById('ph-title').textContent='No reports uploaded yet';
+      document.getElementById('ph-sub').textContent='Drop the daily .xlsx file in the sidebar to get started';
+      return;
+    }
+
+    // Auto-load the most recent date
+    await loadDateFromDB(dates[0].report_date);
+  }catch(e){
+    document.getElementById('ph-title').textContent='Could not connect to database';
+    document.getElementById('ph-sub').textContent=e.message;
+  }
+}
+
+// ── LOAD A DATE FROM SUPABASE ──
+async function loadDateFromDB(dateKey){
+  setStatus('saving','Loading '+dateKey+'…');
+  const {data, error}=await supabase
+    .from('fleet_snapshots')
+    .select('*')
+    .eq('report_date', dateKey);
+  if(error){setStatus('error','Load failed: '+error.message);return;}
+
+  const cars=data.map(r=>({
+    id:r.car_id, origin:r.origin||'', bol:r.bol||'',
+    waybillDate:r.waybill_date?new Date(r.waybill_date+'T12:00:00'):null,
+    consignee:r.consignee||'', destination:r.destination||'',
+    currentLoc:r.current_loc||'', section:r.section, clm:r.clm_code||'',
+    carrier:r.carrier||'', etaStr:r.eta_str||'',
+    etaDt:r.eta_date?new Date(r.eta_date+'T12:00:00'):null,
+    dwell:parseFloat(r.dwell)||0, note:r.note||'',
+    loop:r.loop, emptyStatus:r.empty_status
+  }));
+
+  ALL_CARS=cars;
+  REPORT_DATE=new Date(dateKey+'T12:00:00');
+  REPORT_DATE_KEY=dateKey;
+  await loadShipHistory7d();
+  buildCalendar();
+  updateHeader();
+  await renderChanges();
+  renderTab1();
+  setRange(7);
+  renderShipHistory();
+  renderTab3();
+  document.getElementById('ph').style.display='none';
+  document.getElementById('app').style.display='flex';
+  switchTab('t1');
+  setStatus('saved','✓ Loaded '+dateKey);
+  setTimeout(()=>hideStatus(),2500);
+}
+
+// ── DRAG/DROP → PARSE → SAVE TO SUPABASE ──
+const sbDrop=document.getElementById('sb-drop');
+sbDrop.addEventListener('dragover',e=>{e.preventDefault();sbDrop.classList.add('over');});
+sbDrop.addEventListener('dragleave',()=>sbDrop.classList.remove('over'));
+sbDrop.addEventListener('drop',e=>{e.preventDefault();sbDrop.classList.remove('over');if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0]);});
+document.getElementById('fi').addEventListener('change',e=>{if(e.target.files[0])processFile(e.target.files[0]);});
+
+function processFile(file){
+  const r=new FileReader();
+  r.onload=e=>{
+    const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+    parseAndSave(wb.Sheets[wb.SheetNames[0]], file.name);
+  };
+  r.readAsArrayBuffer(file);
+}
+
+async function parseAndSave(ws, fname){
+  setStatus('saving','⏳ Parsing…');
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'MM/DD/YYYY'});
+  const cars=[];
+  let sec='LOADED';
+  const dm=fname.match(/(\d{4}-\d{2}-\d{2})/);
+  const dateKey=dm?dm[1]:new Date().toISOString().slice(0,10);
+
+  rows.forEach((row,i)=>{
+    if(i===0)return;
+    const f=String(row[0]||'').trim().toUpperCase();
+    if(f==='EMPTY CARS'){sec='EMPTY';return;}
+    if(f==='SHOP CARS'){sec='SHOP';return;}
+    if(!f.startsWith('CRYX'))return;
+    let wbDt=null;
+    const wbR=row[4];
+    if(wbR){if(wbR instanceof Date)wbDt=wbR;else{const d=new Date(wbR);if(!isNaN(d))wbDt=d;}}
+    let etaStr='',etaDt=null;
+    const etaR=row[12];
+    if(etaR){if(etaR instanceof Date){etaDt=etaR;etaStr=etaR.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}else etaStr=String(etaR);}
+    const dest=String(row[6]||'').toUpperCase().trim();
+    const origin=String(row[1]||'').toUpperCase().trim();
+    const clm=String(row[10]||'').trim().toUpperCase();
+    let loop=null;
+    if(sec==='SHOP')loop='SHOP';
+    else if(sec==='LOADED')loop=SITES.find(s=>origin.includes(s.split(',')[0]))||null;
+    else loop=SITES.find(s=>dest.includes(s.split(',')[0]))||null;
+    let emptyStatus='inbound';
+    if(sec==='EMPTY'){
+      if(clm==='Z')emptyStatus='onsite';
+      else if(clm==='Y')emptyStatus='waiting';
+      else if(clm==='H')emptyStatus='held';
+      else emptyStatus='inbound';
+    }
+    cars.push({
+      id:String(row[0]||'').trim(), origin:row[1]||'', bol:row[2]||'',
+      waybillDate:wbDt, consignee:row[5]||'', destination:row[6]||'',
+      currentLoc:String(row[7]||'').trim(), section:sec, clm,
+      carrier:row[11]||'', etaStr, etaDt,
+      dwell:parseFloat(row[13])||0, note:row[14]||'', loop, emptyStatus
+    });
+  });
+
+  // ── UPSERT to Supabase ──
+  setStatus('saving','⏳ Saving to database…');
+  try{
+    // 1. Upsert report date row
+    const {error:dErr}=await supabase.from('fleet_report_dates').upsert({
+      report_date: dateKey,
+      uploaded_at: new Date().toISOString(),
+      car_count: cars.length
+    },{onConflict:'report_date'});
+    if(dErr)throw dErr;
+
+    // 2. Delete old snapshot rows for this date (clean re-upload)
+    const {error:delErr}=await supabase.from('fleet_snapshots').delete().eq('report_date',dateKey);
+    if(delErr)throw delErr;
+
+    // 3. Insert all car rows (batch in chunks of 200)
+    const rows_to_insert=cars.map(c=>({
+      report_date: dateKey,
+      car_id: c.id,
+      section: c.section,
+      loop: c.loop,
+      empty_status: c.emptyStatus||null,
+      clm_code: c.clm||null,
+      current_loc: c.currentLoc||null,
+      destination: c.destination||null,
+      origin: c.origin||null,
+      carrier: c.carrier||null,
+      consignee: c.consignee||null,
+      bol: c.bol||null,
+      waybill_date: c.waybillDate?c.waybillDate.toISOString().slice(0,10):null,
+      eta_str: c.etaStr||null,
+      eta_date: c.etaDt?c.etaDt.toISOString().slice(0,10):null,
+      dwell: c.dwell||null,
+      note: c.note||null
+    }));
+
+    for(let i=0;i<rows_to_insert.length;i+=200){
+      const chunk=rows_to_insert.slice(i,i+200);
+      const {error:iErr}=await supabase.from('fleet_snapshots').insert(chunk);
+      if(iErr)throw iErr;
+    }
+
+    LOADED_DATE_SET.add(dateKey);
+    ALL_CARS=cars;
+    REPORT_DATE=new Date(dateKey+'T12:00:00');
+    REPORT_DATE_KEY=dateKey;
+    await loadShipHistory7d();
+    buildCalendar();
+    updateHeader();
+    await renderChanges();
+    renderTab1();
+    setRange(7);
+    renderShipHistory();
+    renderTab3();
+    document.getElementById('ph').style.display='none';
+    document.getElementById('app').style.display='flex';
+    switchTab('t1');
+    setStatus('saved','✓ Saved '+dateKey+' ('+cars.length+' cars)');
+    setTimeout(()=>hideStatus(),3000);
+  }catch(e){
+    setStatus('error','Save failed: '+e.message);
+  }
+}
+
+// ── STATUS INDICATOR ──
+function setStatus(type, msg){
+  const el=document.getElementById('sb-status');
+  el.className='sb-status '+type;
+  el.style.display='block';
+  el.innerHTML=(type==='saving'?'<span class="spin"></span>':'')+msg;
+}
+function hideStatus(){
+  const el=document.getElementById('sb-status');
+  el.style.display='none';
+}
+
+// ── CALENDAR ──
+function buildCalendar(){
+  const container=document.getElementById('cal-container');
+  container.innerHTML='';
+  const today=new Date();
+  const start=new Date(today);
+  start.setDate(start.getDate()-41);
+  const byMonth={};
+  for(let d=new Date(start);d<=today;d.setDate(d.getDate()+1)){
+    const dow=d.getDay();
+    const iso=d.toISOString().slice(0,10);
+    const mk=d.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    if(!byMonth[mk])byMonth[mk]=[];
+    byMonth[mk].push({iso,dow});
+  }
+  Object.entries(byMonth).forEach(([month,days])=>{
+    const sec=document.createElement('div');
+    sec.className='cal-month';
+    sec.innerHTML=`<div class="cal-month-lbl">${month}</div>`;
+    days.forEach(({iso,dow})=>{
+      const isWeekend=dow===0||dow===6;
+      const isLoaded=LOADED_DATE_SET.has(iso);
+      const isActive=iso===REPORT_DATE_KEY;
+      const lbl=new Date(iso+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'});
+      const cls=['cal-day',isWeekend?'weekend':'',isLoaded?'loaded':'',isActive?'active-day':''].filter(Boolean).join(' ');
+      const div=document.createElement('div');
+      div.className=cls;
+      div.innerHTML=`<div class="cal-day-dot"></div>
+        <div class="cal-day-label">${lbl}</div>
+        ${isLoaded?'<span class="cal-check">✓</span>':''}
+        ${isWeekend?'<span class="cal-day-tag">WE</span>':''}`;
+      if(isLoaded&&!isActive){
+        div.addEventListener('click',()=>loadDateFromDB(iso));
+      }
+      sec.appendChild(div);
+    });
+    container.appendChild(sec);
+  });
+}
+
+// ── SHIP HISTORY CACHE (7d, used by Tab 1 loop cards) ──
+async function loadShipHistory7d(){
+  if(!REPORT_DATE_KEY)return;
+  const from=new Date(REPORT_DATE); from.setDate(from.getDate()-7);
+  const fromStr=from.toISOString().slice(0,10);
+  const {data}=await supabase
+    .from('fleet_snapshots')
+    .select('car_id,loop,destination,carrier,waybill_date,report_date')
+    .eq('section','LOADED')
+    .not('waybill_date','is',null)
+    .gte('waybill_date',fromStr)
+    .lte('waybill_date',REPORT_DATE_KEY)
+    .order('report_date',{ascending:true});
+  const seen=new Map();
+  SHIP_HISTORY_7D=[];
+  (data||[]).forEach(r=>{
+    const key=r.car_id+'|'+(r.waybill_date||'');
+    if(!seen.has(key)){seen.set(key,true);SHIP_HISTORY_7D.push({id:r.car_id,loop:r.loop,destination:r.destination||'',carrier:r.carrier||'',waybillDate:r.waybill_date?new Date(r.waybill_date+'T12:00:00'):null});}
+  });
+}
+
+// ── CHANGES (compare against previous business day specifically) ──
+function prevBusinessDay(dateKey){
+  const d=new Date(dateKey+'T12:00:00');
+  // Step back 1 day; if that lands on Sunday go back 2, Saturday go back 1 more
+  d.setDate(d.getDate()-1);
+  if(d.getDay()===0) d.setDate(d.getDate()-2); // Sunday → Friday
+  if(d.getDay()===6) d.setDate(d.getDate()-1); // Saturday → Friday (shouldn't happen but safe)
+  return d.toISOString().slice(0,10);
+}
+
+async function renderChanges(){
+  const strip=document.getElementById('changes-strip');
+  const prevKey=prevBusinessDay(REPORT_DATE_KEY);
+
+  // Check that date actually exists in DB — if not, hide strip silently
+  const {data:check}=await supabase
+    .from('fleet_report_dates')
+    .select('report_date')
+    .eq('report_date',prevKey)
+    .limit(1);
+  if(!check||!check.length){
+    strip.style.display='none';
+    return;
+  }
+
+  const {data:prevData}=await supabase
+    .from('fleet_snapshots')
+    .select('car_id,section,eta_str')
+    .eq('report_date',prevKey);
+  if(!prevData||!prevData.length){strip.style.display='none';return;}
+
+  const prevById={};
+  prevData.forEach(c=>prevById[c.car_id]=c);
+
+  const statusFlips=[], etaChanges=[];
+  ALL_CARS.forEach(c=>{
+    const p=prevById[c.id];
+    if(!p)return;
+    if(p.section!==c.section&&
+      ((p.section==='LOADED'&&c.section==='EMPTY')||(p.section==='EMPTY'&&c.section==='LOADED'))){
+      statusFlips.push({id:c.id, arrow:p.section==='EMPTY'?'Empty → Loaded':'Loaded → Empty', loop:c.loop});
+    }
+    if(c.section==='LOADED'&&p.section==='LOADED'){
+      const pe=p.eta_str||'', ce=c.etaStr||'';
+      if(pe&&ce&&pe!==ce&&!pe.toLowerCase().includes('placement')&&!ce.toLowerCase().includes('placement')){
+        etaChanges.push({id:c.id,from:pe,to:ce,loop:c.loop});
+      }
+    }
+  });
+
+  if(!statusFlips.length&&!etaChanges.length){strip.style.display='none';return;}
+
+  function chgRows(arr,fn){return arr.length?arr.map(fn).join(''):'<div class="chg-none">None</div>';}
+  strip.style.display='block';
+  strip.innerHTML=`<div class="changes-strip">
+    <div class="changes-strip-hdr">
+      <span class="changes-strip-title">⚡ Changes since ${prevKey}</span>
+      <span class="changes-strip-date">compared to ${REPORT_DATE_KEY}</span>
+    </div>
+    <div class="changes-grid">
+      <div class="chg-group">
+        <div class="chg-group-lbl">🔄 Cars Loaded / Emptied (${statusFlips.length})</div>
+        ${chgRows(statusFlips,c=>`<div class="chg-row"><span class="chg-id">${c.id}</span><span class="chg-detail"> — ${c.arrow}${c.loop&&c.loop!=='SHOP'?' ('+SITE_LBL[c.loop]+' loop)':''}</span></div>`)}
+      </div>
+      <div class="chg-group">
+        <div class="chg-group-lbl">📅 ETA Changes (${etaChanges.length})</div>
+        ${chgRows(etaChanges,c=>`<div class="chg-row"><span class="chg-id">${c.id}</span><span class="chg-detail"> — ${c.from} → ${c.to}</span></div>`)}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── HELPERS ──
+function etaInfo(etaStr,etaDt,rd){
+  if(!etaStr)return{cls:'eta-nu',label:'—'};
+  const l=etaStr.toLowerCase();
+  if(l.includes('actual'))return{cls:'eta-lbl',label:'PLACED'};
+  if(l.includes('constructive'))return{cls:'eta-lbl',label:'CONSTRUCTIVE'};
+  if(l.includes('delayed')||l.includes('held'))return{cls:'eta-del',label:'DELAYED/HELD'};
+  if(etaDt){const d=Math.round((etaDt-rd)/86400000);if(d<=1)return{cls:'eta-soon',label:etaStr+' ⚡'};if(d<=3)return{cls:'eta-ok',label:etaStr};}
+  return{cls:'eta-nu',label:etaStr};
+}
+function dwCls(d){return d>=30?'crit':d>=7?'warn':'ok';}
+function dwLabel(d){return d>0?d.toFixed(1)+'d':'—';}
+function detailRow(car,type){
+  const dc=dwCls(car.dwell);
+  let etaCls='eta-nu',etaD='';
+  if(type==='shipped'){etaD=car.waybillDate?car.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';}
+  else{const ei=etaInfo(car.etaStr,car.etaDt,REPORT_DATE);etaCls=ei.cls;etaD=ei.label;}
+  const loc=(type==='loaded'||type==='inbound')?`${car.currentLoc} → ${car.destination}`:type==='shipped'?`→ ${car.destination}`:car.currentLoc;
+  const note=car.note?car.note.slice(0,55)+(car.note.length>55?'…':''):'';
+  return `<div class="drow"><div class="dr-id">${car.id}</div><div class="dr-loc" title="${car.currentLoc}">${loc}</div>${etaD?`<div class="dr-eta ${etaCls}">${etaD}</div>`:''}<div class="dr-dwell ${dc}">${dwLabel(car.dwell)}</div>${note?`<div class="dr-note" title="${car.note}">${note}</div>`:''}</div>`;
+}
+
+function updateHeader(){
+  document.getElementById('rpt-date').textContent='Report: '+REPORT_DATE_KEY;
+  const l=ALL_CARS.filter(c=>c.section==='LOADED').length;
+  const e=ALL_CARS.filter(c=>c.section==='EMPTY').length;
+  const s=ALL_CARS.filter(c=>c.section==='SHOP').length;
+  document.getElementById('hp-total').textContent=ALL_CARS.length;
+  document.getElementById('hp-loaded').textContent=l;
+  document.getElementById('hp-empty').textContent=e;
+  document.getElementById('hp-shop').textContent=s;
+  document.getElementById('tb1').textContent=ALL_CARS.length;
+  document.getElementById('tb2').textContent=l;
+  document.getElementById('tb3').textContent=l;
+}
+
+// ── TAB 1 ──
+function renderTab1(){
+  const banners=[];
+  const miss=33-ALL_CARS.length;
+  if(miss>0)banners.push({level:'crit',icon:'🔴',html:`<strong>${miss} car${miss>1?'s':''} missing from today\'s report</strong> — only ${ALL_CARS.length}/33 accounted for.`});
+  const crit=ALL_CARS.filter(c=>c.dwell>=30);
+  if(crit.length)banners.push({level:'crit',icon:'🔴',html:`<strong>${crit.length} car${crit.length>1?'s':''} at ≥30 day dwell:</strong> ${crit.map(c=>`${c.id} (${c.dwell}d)`).join(', ')}`});
+  const waiting=ALL_CARS.filter(c=>c.emptyStatus==='waiting');
+  if(waiting.length){const byL={};waiting.forEach(c=>{byL[c.destination]=(byL[c.destination]||0)+1;});banners.push({level:'warn',icon:'⚠️',html:`<strong>${waiting.length} car${waiting.length>1?'s':''} waiting to be placed (constructive):</strong> ${Object.entries(byL).map(([l,n])=>`${n} at ${l}`).join(', ')}`});}
+  const held=ALL_CARS.filter(c=>c.section==='EMPTY'&&c.emptyStatus==='held');
+  if(held.length)banners.push({level:'warn',icon:'⚠️',html:`<strong>${held.length} empty${held.length>1?'s':''} delayed/held:</strong> ${held.map(c=>`${c.id} at ${c.currentLoc}`).join(', ')}`});
+  document.getElementById('banners1').innerHTML=banners.map(b=>`<div class="banner ${b.level}"><span class="banner-ic">${b.icon}</span><span class="banner-tx">${b.html}</span></div>`).join('');
+
+  const grid=document.getElementById('loops-grid');
+  grid.innerHTML='';
+  SITES.forEach(site=>{
+    const lL=ALL_CARS.filter(c=>c.loop===site&&c.section==='LOADED');
+    const lO=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite');
+    const lW=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='waiting');
+    const lH=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='held');
+    const lI=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='inbound');
+    const lS=SHIP_HISTORY_7D.filter(c=>c.loop===site);
+    const tot=lL.length+lO.length+lW.length+lH.length+lI.length;
+    const hasCrit=lO.some(c=>c.dwell>=30)||lW.some(c=>c.dwell>=30);
+    const hasWarn=!hasCrit&&(lO.some(c=>c.dwell>=7)||lW.length>0||lH.length>0);
+    let d='';
+    if(lL.length){d+=`<div class="dsec-lbl">🟢 Loaded — outbound (${lL.length})</div>`;d+=lL.map(c=>detailRow(c,'loaded')).join('');}
+    if(lO.length){d+=`<div class="dsec-lbl">📍 Empty on-site (${lO.length})</div>`;d+=lO.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'onsite')).join('');}
+    if(lW.length){d+=`<div class="dsec-lbl">⏳ Waiting to be placed (${lW.length})</div>`;d+=lW.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'waiting')).join('');}
+    if(lH.length){d+=`<div class="dsec-lbl">🔴 Delayed / Held (${lH.length})</div>`;d+=lH.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'held')).join('');}
+    if(lI.length){d+=`<div class="dsec-lbl">🔄 Empty inbound (${lI.length})</div>`;d+=lI.sort((a,b)=>a.etaDt&&b.etaDt?a.etaDt-b.etaDt:0).map(c=>detailRow(c,'inbound')).join('');}
+    if(lS.length){d+=`<div class="dsec-lbl">📤 Shipped last 7 days (${lS.length})</div>`;d+=lS.map(c=>detailRow(c,'shipped')).join('');}
+    if(!d)d=`<div class="drow" style="color:var(--dim);padding:10px 12px;">No cars in this loop today</div>`;
+    grid.innerHTML+=`<div class="lcard${hasCrit?' has-crit':hasWarn?' has-warn':''}">
+      <div class="lcard-hdr"><div class="lcard-name">${SITE_LBL[site]}</div><div style="text-align:right"><div class="lcard-total">${tot}</div><div class="lcard-total-lbl">cars in loop</div></div></div>
+      <div class="lstats">
+        <div class="lstat ls-loaded"><div class="lstat-n">${lL.length}</div><div class="lstat-l">Loaded</div><div class="lstat-s">outbound</div></div>
+        <div class="lstat ls-onsite"><div class="lstat-n">${lO.length}</div><div class="lstat-l">On-Site</div><div class="lstat-s">empty</div></div>
+        <div class="lstat ls-wait"><div class="lstat-n">${lW.length}</div><div class="lstat-l">Waiting</div><div class="lstat-s">to be placed</div></div>
+        <div class="lstat ls-inbound"><div class="lstat-n">${lI.length+lH.length}</div><div class="lstat-l">Inbound</div><div class="lstat-s">empty</div></div>
+        <div class="lstat ls-shipped"><div class="lstat-n">${lS.length}</div><div class="lstat-l">Shipped</div><div class="lstat-s">last 7d</div></div>
+      </div><div>${d}</div></div>`;
+  });
+  const shop=ALL_CARS.filter(c=>c.section==='SHOP');
+  document.getElementById('shop-card').innerHTML=`<div class="shop-hdr"><div class="shop-title">🔧 Shop Cars</div><div class="shop-n">${shop.length}</div></div>
+  <div>${shop.length?shop.map(c=>{const dc=dwCls(c.dwell);const ei=etaInfo(c.etaStr,c.etaDt,REPORT_DATE);return `<div class="drow"><div class="dr-id">${c.id}</div><div class="dr-loc">${c.currentLoc} → ${c.destination}</div><div class="dr-eta ${ei.cls}">${ei.label}</div><div class="dr-dwell ${dc}">${dwLabel(c.dwell)}</div>${c.note?`<div class="dr-note" title="${c.note}">${c.note.slice(0,55)}</div>`:''}</div>`;}).join(''):'<div class="drow" style="color:var(--dim);padding:10px 12px;">No shop cars today</div>'}</div>`;
+}
+
+// ── TAB 2 ──
+// Cross-snapshot shipment history: for each car, find the first date it appeared
+// as LOADED with a given waybill_date. That waybill_date is the true ship date,
+// regardless of whether the car is still loaded in today's snapshot.
+// We query Supabase for all LOADED rows across all snapshots in the date window,
+// then deduplicate per car_id keeping the record from the earliest report_date.
+
+function setRange(days){
+  if(!REPORT_DATE)return;
+  const to=new Date(REPORT_DATE),from=new Date(REPORT_DATE);
+  from.setDate(from.getDate()-days);
+  document.getElementById('sh-from').value=from.toISOString().slice(0,10);
+  document.getElementById('sh-to').value=to.toISOString().slice(0,10);
+  renderShipHistory();
+}
+
+async function renderShipHistory(){
+  const fv=document.getElementById('sh-from').value, tv=document.getElementById('sh-to').value;
+  if(!fv||!tv)return;
+
+  const bs=document.getElementById('sh-by-site');
+  bs.innerHTML='<div style="padding:16px;color:var(--muted);font-size:11px;"><span class="spin"></span> Loading shipment history…</div>';
+
+  // Query all LOADED rows whose waybill_date falls in the range, across all report dates
+  // We cast waybill_date as a filter so the DB does the heavy lifting
+  const {data, error}=await supabase
+    .from('fleet_snapshots')
+    .select('car_id, loop, destination, carrier, waybill_date, report_date')
+    .eq('section','LOADED')
+    .not('waybill_date','is',null)
+    .gte('waybill_date', fv)
+    .lte('waybill_date', tv)
+    .order('report_date', {ascending:true});  // earliest first so dedup keeps first sighting
+
+  if(error){
+    bs.innerHTML=`<div style="padding:16px;color:var(--red);font-size:11px;">Failed to load history: ${error.message}</div>`;
+    return;
+  }
+
+  // Deduplicate: keep only the first report_date we saw each car_id as loaded
+  // with a particular waybill_date. If the same car shipped twice in the window
+  // (different waybill dates) we want both entries.
+  const seen=new Map(); // key: car_id + waybill_date
+  const shipped=[];
+  (data||[]).forEach(r=>{
+    const key=r.car_id+'|'+(r.waybill_date||'');
+    if(!seen.has(key)){
+      seen.set(key,true);
+      shipped.push({
+        id: r.car_id,
+        loop: r.loop,
+        destination: r.destination||'',
+        carrier: r.carrier||'',
+        waybillDate: r.waybill_date ? new Date(r.waybill_date+'T12:00:00') : null
+      });
+    }
+  });
+
+  const fd=new Date(fv+'T00:00:00'), td=new Date(tv+'T23:59:59');
+  const days=Math.round((td-fd)/86400000)+1;
+  const carriers=[...new Set(shipped.map(c=>c.carrier).filter(Boolean))];
+  const dests=[...new Set(shipped.map(c=>c.destination).filter(Boolean))];
+
+  document.getElementById('sh-summary').innerHTML=`
+    <div class="sh-stat"><div class="sh-stat-n">${shipped.length}</div><div class="sh-stat-l">Cars Shipped</div></div>
+    <div class="sh-stat"><div class="sh-stat-n">${days}</div><div class="sh-stat-l">Day Range</div></div>
+    <div class="sh-stat"><div class="sh-stat-n">${shipped.length>0?(shipped.length/days).toFixed(1):'0'}</div><div class="sh-stat-l">Per Day Avg</div></div>
+    <div class="sh-stat"><div class="sh-stat-n">${carriers.length}</div><div class="sh-stat-l">Carriers</div></div>
+    <div class="sh-stat"><div class="sh-stat-n">${dests.length}</div><div class="sh-stat-l">Destinations</div></div>`;
+
+  bs.innerHTML='';
+  SITES.forEach(site=>{
+    const ss=shipped.filter(c=>c.loop===site).sort((a,b)=>b.waybillDate-a.waybillDate);
+    bs.innerHTML+=`<div class="site-hist-card">
+      <div class="site-hist-hdr"><div class="site-hist-name">${SITE_LBL[site]}</div><div class="site-hist-n">${ss.length}</div></div>
+      ${ss.map(c=>`<div class="sh-row">
+        <div class="sh-row-id">${c.id}</div>
+        <div class="sh-row-dest">${c.destination}</div>
+        <div class="sh-row-date">${c.waybillDate?c.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</div>
+        <div class="sh-row-carrier">${c.carrier||'—'}</div>
+      </div>`).join('')||'<div class="sh-row" style="color:var(--dim);padding:10px 12px;">No shipments in range</div>'}
+    </div>`;
+  });
+
+  // Note if history is incomplete (no past snapshots uploaded yet)
+  if(LOADED_DATE_SET.size<=1){
+    bs.innerHTML+=`<div style="margin-top:10px;padding:9px 12px;background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:5px;font-size:11px;color:var(--yellow);">
+      ⚠️ <strong>History limited</strong> — only one report has been uploaded. Shipment counts will grow more accurate as daily reports accumulate.
+    </div>`;
+  }
+}
+
+// ── TAB 3 ──
+function renderTab3(){
+  const loaded=ALL_CARS.filter(c=>c.section==='LOADED');
+  const banners=[];
+  const con=loaded.filter(c=>c.etaStr&&c.etaStr.toLowerCase().includes('constructive'));
+  if(con.length)banners.push({level:'warn',icon:'⚠️',html:`<strong>${con.length} loaded car${con.length>1?'s':''} constructively placed</strong> — arrived but not yet unloaded.`});
+  const hd=loaded.filter(c=>c.dwell>=7);
+  if(hd.length)banners.push({level:'warn',icon:'⚠️',html:`<strong>${hd.length} loaded car${hd.length>1?'s':''} with dwell ≥7 days:</strong> ${hd.map(c=>`${c.id} (${c.dwell}d)`).join(', ')}`});
+  document.getElementById('banners3').innerHTML=banners.map(b=>`<div class="banner ${b.level}"><span class="banner-ic">${b.icon}</span><span class="banner-tx">${b.html}</span></div>`).join('');
+  if(!loaded.length){document.getElementById('loaded-grid').innerHTML='<div class="empty-st">No loaded cars in today\'s report</div>';return;}
+  const sorted=[...loaded].sort((a,b)=>{
+    const ac=a.etaStr&&a.etaStr.toLowerCase().includes('constructive')?1:0;
+    const bc=b.etaStr&&b.etaStr.toLowerCase().includes('constructive')?1:0;
+    if(ac!==bc)return bc-ac;
+    if(a.etaDt&&b.etaDt)return a.etaDt-b.etaDt;
+    return 0;
+  });
+  document.getElementById('loaded-grid').innerHTML=sorted.map(car=>{
+    const ei=etaInfo(car.etaStr,car.etaDt,REPORT_DATE);
+    const dc=dwCls(car.dwell);
+    const isC=car.etaStr&&car.etaStr.toLowerCase().includes('constructive');
+    const cc='lcar-card'+(isC?' constructive':(car.etaDt&&Math.round((car.etaDt-REPORT_DATE)/86400000)<=2)?' arriving-soon':'');
+    let prog='';
+    if(car.waybillDate&&car.etaDt){
+      const total=car.etaDt-car.waybillDate,elapsed=REPORT_DATE-car.waybillDate;
+      const pct=Math.min(100,Math.max(0,Math.round((elapsed/total)*100)));
+      const late=REPORT_DATE>car.etaDt;
+      prog=`<div class="progress-wrap"><div class="progress-labels"><span>${car.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} — Shipped</span><span>${pct}% of transit${late?' — PAST ETA':''}</span><span>${car.etaStr}</span></div><div class="progress-bar"><div class="progress-fill${late?' late':pct<50?' pending':''}" style="width:${pct}%"></div></div></div>`;
+    }
+    const it=car.waybillDate?Math.round((REPORT_DATE-car.waybillDate)/86400000):null;
+    const edo=car.etaDt?Math.round((car.etaDt-REPORT_DATE)/86400000):null;
+    return `<div class="${cc}">
+      <div class="lcar-hdr">
+        <div class="lcar-id">${car.id}</div>
+        <div class="lcar-route"><span>${car.origin}</span> <span style="color:var(--dim)">→</span> <span>${car.destination}</span></div>
+        <div><span class="lcar-loop-tag">${SITE_LBL[car.loop]||car.loop||'?'} loop</span></div>
+        <div class="lcar-eta-big"><div class="lcar-eta-val ${ei.cls}">${ei.label}</div><div class="lcar-eta-lbl">Latest ETA</div></div>
+      </div>
+      <div class="lcar-stats">
+        <div class="lcar-stat"><div class="lcar-stat-v">${car.waybillDate?car.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div><div class="lcar-stat-l">Shipped</div></div>
+        <div class="lcar-stat"><div class="lcar-stat-v">${it!==null?it+'d':'—'}</div><div class="lcar-stat-l">Days in Transit</div></div>
+        <div class="lcar-stat"><div class="lcar-stat-v" style="font-size:11px;max-width:120px;white-space:normal;line-height:1.3;">${car.currentLoc||'—'}</div><div class="lcar-stat-l">Current Location</div></div>
+        <div class="lcar-stat"><div class="lcar-stat-v"><span class="dr-dwell ${dc}" style="font-size:12px;">${dwLabel(car.dwell)}</span></div><div class="lcar-stat-l">Dwell at Location</div></div>
+        <div class="lcar-stat"><div class="lcar-stat-v">${edo!==null?(edo<=0?'<span style="color:var(--red)">Overdue</span>':edo+'d out'):(isC?'<span style="color:var(--yellow)">Constructive</span>':'—')}</div><div class="lcar-stat-l">Days to ETA</div></div>
+      </div>
+      ${prog}
+      <div class="lcar-note">${car.note||''}</div>
+      <div style="padding:5px 14px 8px;font-size:10px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;">
+        ${car.carrier?`<span>Carrier: <span style="color:var(--muted)">${car.carrier}</span></span>`:''}
+        ${car.consignee?`<span>Consignee: <span style="color:var(--muted)">${car.consignee}</span></span>`:''}
+        ${car.bol?`<span>BOL: <span style="font-family:'IBM Plex Mono',monospace;color:var(--muted)">${car.bol}</span></span>`:''}
+        <span>CLM: <span style="font-family:'IBM Plex Mono',monospace;color:var(--muted)">${car.clm}</span></span>
+      </div></div>`;
+  }).join('');
+}
+
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===id));
+}
+
+// ── START ──
+window._fleetInit = init;
+window.switchTab = switchTab;
+window.setRange = setRange;
+window.renderShipHistory = renderShipHistory;
+if(sessionStorage.getItem('fleet-auth')==='1'){
+  document.getElementById('pw-gate').style.display='none';
+  init();
+} else {
+  setTimeout(()=>document.getElementById('pw-input').focus(), 100);
+}
+</script>
+</body>
+</html>
