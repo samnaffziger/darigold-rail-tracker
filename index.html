@@ -616,15 +616,17 @@ async function loadShipHistory7d(){
   const fromStr=from.toISOString().slice(0,10);
   const {data}=await supabase
     .from('fleet_snapshots')
-    .select('car_id,loop,destination,carrier,waybill_date,report_date')
+    .select('car_id,loop,origin,destination,carrier,waybill_date,report_date')
     .eq('section','LOADED')
     .not('waybill_date','is',null)
     .gte('waybill_date',fromStr)
     .lte('waybill_date',REPORT_DATE_KEY)
     .order('report_date',{ascending:true});
+  const SITE_ORIGINS=['NAMPA','CONNELL','SUNNYSIDE','AUBURN'];
   const seen=new Map();
   SHIP_HISTORY_7D=[];
   (data||[]).forEach(r=>{
+    if(!r.origin||!SITE_ORIGINS.some(s=>r.origin.toUpperCase().includes(s)))return;
     const key=r.car_id+'|'+(r.waybill_date||'');
     if(!seen.has(key)){seen.set(key,true);SHIP_HISTORY_7D.push({id:r.car_id,loop:r.loop,destination:r.destination||'',carrier:r.carrier||'',waybillDate:r.waybill_date?new Date(r.waybill_date+'T12:00:00'):null});}
   });
@@ -813,30 +815,33 @@ async function renderShipHistory(){
   // We cast waybill_date as a filter so the DB does the heavy lifting
   const {data, error}=await supabase
     .from('fleet_snapshots')
-    .select('car_id, loop, destination, carrier, waybill_date, report_date')
+    .select('car_id, loop, origin, destination, carrier, waybill_date, report_date')
     .eq('section','LOADED')
     .not('waybill_date','is',null)
     .gte('waybill_date', fv)
     .lte('waybill_date', tv)
-    .order('report_date', {ascending:true});  // earliest first so dedup keeps first sighting
+    .order('report_date', {ascending:true});
 
   if(error){
     bs.innerHTML=`<div style="padding:16px;color:var(--red);font-size:11px;">Failed to load history: ${error.message}</div>`;
     return;
   }
 
-  // Deduplicate: keep only the first report_date we saw each car_id as loaded
-  // with a particular waybill_date. If the same car shipped twice in the window
-  // (different waybill dates) we want both entries.
-  const seen=new Map(); // key: car_id + waybill_date
+  // Only count shipments that originated from a Darigold warehouse
+  const SITE_ORIGINS=['NAMPA','CONNELL','SUNNYSIDE','AUBURN'];
+  const isFromDarigold=r=>r.origin&&SITE_ORIGINS.some(s=>r.origin.toUpperCase().includes(s));
+
+  const seen=new Map();
   const shipped=[];
   (data||[]).forEach(r=>{
+    if(!isFromDarigold(r))return; // skip cars loaded from non-Darigold locations
     const key=r.car_id+'|'+(r.waybill_date||'');
     if(!seen.has(key)){
       seen.set(key,true);
       shipped.push({
         id: r.car_id,
         loop: r.loop,
+        origin: r.origin||'',
         destination: r.destination||'',
         carrier: r.carrier||'',
         waybillDate: r.waybill_date ? new Date(r.waybill_date+'T12:00:00') : null
