@@ -630,18 +630,30 @@ async function loadShipHistory7d(){
   });
 }
 
-// ── CHANGES (compare current date to previous uploaded date) ──
+// ── CHANGES (compare against previous business day specifically) ──
+function prevBusinessDay(dateKey){
+  const d=new Date(dateKey+'T12:00:00');
+  // Step back 1 day; if that lands on Sunday go back 2, Saturday go back 1 more
+  d.setDate(d.getDate()-1);
+  if(d.getDay()===0) d.setDate(d.getDate()-2); // Sunday → Friday
+  if(d.getDay()===6) d.setDate(d.getDate()-1); // Saturday → Friday (shouldn't happen but safe)
+  return d.toISOString().slice(0,10);
+}
+
 async function renderChanges(){
   const strip=document.getElementById('changes-strip');
-  // Get the previous uploaded date from the DB
-  const {data:dates}=await supabase
+  const prevKey=prevBusinessDay(REPORT_DATE_KEY);
+
+  // Check that date actually exists in DB — if not, hide strip silently
+  const {data:check}=await supabase
     .from('fleet_report_dates')
     .select('report_date')
-    .lt('report_date', REPORT_DATE_KEY)
-    .order('report_date',{ascending:false})
+    .eq('report_date',prevKey)
     .limit(1);
-  if(!dates||!dates.length){strip.style.display='none';return;}
-  const prevKey=dates[0].report_date;
+  if(!check||!check.length){
+    strip.style.display='none';
+    return;
+  }
 
   const {data:prevData}=await supabase
     .from('fleet_snapshots')
@@ -929,6 +941,9 @@ function switchTab(id){
 
 // ── START ──
 window._fleetInit = init;
+window.switchTab = switchTab;
+window.setRange = setRange;
+window.renderShipHistory = renderShipHistory;
 if(sessionStorage.getItem('fleet-auth')==='1'){
   document.getElementById('pw-gate').style.display='none';
   init();
