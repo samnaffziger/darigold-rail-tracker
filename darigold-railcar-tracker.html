@@ -229,9 +229,9 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
       style="width:100%;background:#0d1117;border:1px solid #484f58;border-radius:5px;padding:8px 12px;
              color:#e6edf3;font-family:'IBM Plex Mono',monospace;font-size:13px;outline:none;
              text-align:center;letter-spacing:.1em;"
-      onkeydown="if(event.key==='Enter')checkPw()">
+    onkeydown="if(event.key==='Enter'){const v=this.value;if(v==='rail'){sessionStorage.setItem('fleet-auth','1');document.getElementById('pw-gate').style.display='none';window._fleetInit&&window._fleetInit();}else{document.getElementById('pw-error').style.display='block';this.value='';this.focus();}}">
     <div id="pw-error" style="color:#f85149;font-size:11px;margin-top:10px;display:none;">Incorrect password</div>
-    <button onclick="checkPw()"
+    <button onclick="const v=document.getElementById('pw-input').value;if(v==='rail'){sessionStorage.setItem('fleet-auth','1');document.getElementById('pw-gate').style.display='none';window._fleetInit&&window._fleetInit();}else{document.getElementById('pw-error').style.display='block';document.getElementById('pw-input').value='';document.getElementById('pw-input').focus();}"
       style="margin-top:14px;width:100%;background:#1f6feb;border:1px solid #58a6ff;border-radius:5px;
              padding:8px;color:#e6edf3;font-size:12px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
              letter-spacing:.05em;">
