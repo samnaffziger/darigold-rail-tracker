@@ -563,21 +563,36 @@ async function parseAndSave(ws, fname){
 
     let wbDt=null;
     const wbR=row[CI.waybill];
-    if(wbR){if(wbR instanceof Date)wbDt=wbR;else{const d=new Date(wbR);if(!isNaN(d))wbDt=d;}}
+    if(wbR){
+      if(wbR instanceof Date){
+        if(wbR.getFullYear()>=2000&&wbR.getFullYear()<=2100) wbDt=wbR;
+      } else {
+        const s=String(wbR).trim();
+        // Only parse if it looks like a date (contains / or - with digits), not a PO number
+        if(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$|^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(s)){
+          const d=new Date(s);
+          if(!isNaN(d)&&d.getFullYear()>=2000&&d.getFullYear()<=2100) wbDt=d;
+        }
+      }
+    }
 
     let etaStr='',etaDt=null;
     const etaR=row[CI.eta];
     if(etaR){
       if(etaR instanceof Date){
-        etaDt=etaR;
-        etaStr=etaR.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        if(etaR.getFullYear()>=2000&&etaR.getFullYear()<=2100){
+          etaDt=etaR;
+          etaStr=etaR.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        }
       } else {
         const s=String(etaR).trim();
+        // Try parsing as a date if it looks like one
         const d=new Date(s);
-        if(!isNaN(d)&&s.match(/\d{4}/)){
+        if(!isNaN(d)&&s.match(/\d{4}/)&&d.getFullYear()>=2000&&d.getFullYear()<=2100){
           etaDt=d;
           etaStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-        } else {
+        } else if(s&&s!=='0'&&s.length>1){
+          // Known status strings and other text — pass through as-is
           etaStr=s;
         }
       }
