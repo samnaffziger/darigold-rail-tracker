@@ -380,12 +380,13 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
         <div class="ob-toolbar">
           <div class="ob-toolbar-left">
             <span class="ob-title">Order Board</span>
-            <span class="ob-subtitle" id="ob-subtitle">Drop the Master Rail Tracker .xlsx to load</span>
+            <span class="ob-subtitle" id="ob-subtitle">Loading from database…</span>
           </div>
-          <div class="ob-toolbar-right">
+          <div class="ob-toolbar-right" style="display:flex;align-items:center;gap:8px;">
+            <div id="ob-status" class="sb-status" style="display:none;"></div>
             <div class="ob-drop" id="ob-drop" onclick="document.getElementById('ob-fi').click()">
               <input type="file" id="ob-fi" accept=".xlsx,.xls">
-              <span>📂 Load Master Tracker</span>
+              <span>📂 Update Master Tracker</span>
             </div>
           </div>
         </div>
@@ -460,11 +461,13 @@ async function init(){
     if(!dates||dates.length===0){
       document.getElementById('ph-title').textContent='No reports uploaded yet';
       document.getElementById('ph-sub').textContent='Drop the daily .xlsx file in the sidebar to get started';
+      await loadOrderBoardFromDB();
       return;
     }
 
     // Auto-load the most recent date
     await loadDateFromDB(dates[0].report_date);
+    await loadOrderBoardFromDB();
   }catch(e){
     document.getElementById('ph-title').textContent='Could not connect to database';
     document.getElementById('ph-sub').textContent=e.message;
@@ -1089,29 +1092,28 @@ obFi.addEventListener('change', e=>{if(e.target.files[0]) parseOrderFile(e.targe
 
 function parseOrderFile(file){
   const r = new FileReader();
-  r.onload = e => {
+  r.onload = async e => {
     const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true});
     const ws = wb.Sheets['InTransit or Pending Rail Order'];
     if(!ws){ alert('Could not find sheet "InTransit or Pending Rail Order" in this file.'); return; }
     const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, dateNF:'MM/DD/YYYY'});
     ORDER_DATA = [];
     rows.forEach((row,i)=>{
-      if(i===0) return; // header
-      const otm   = row[0];
+      if(i===0) return;
+      const otm = row[0];
       if(!otm) return;
-      const shipper   = row[1]||'';
-      const receiver  = row[2]||'';
-      const destCity  = row[3]||'';
-      const carType   = row[4]||'';
-      const carRaw    = row[6]||'';
-      const soNum     = row[7]||'';
-      const custPO    = row[8]||'';
-      const expShipRaw= row[9];
-      const rddRaw    = row[10];
-      const status    = (row[11]||'').trim();
-      const shipDateRaw=row[12];
+      const shipper    = row[1]||'';
+      const receiver   = row[2]||'';
+      const destCity   = row[3]||'';
+      const carType    = row[4]||'';
+      const carRaw     = row[6]||'';
+      const soNum      = row[7]||'';
+      const custPO     = row[8]||'';
+      const expShipRaw = row[9];
+      const rddRaw     = row[10];
+      const status     = (row[11]||'').trim();
+      const shipDateRaw= row[12];
 
-      // Parse dates safely — skip formula strings
       function safeDate(v){
         if(!v) return null;
         if(v instanceof Date) return v;
@@ -1121,22 +1123,96 @@ function parseOrderFile(file){
         return isNaN(d)?null:d;
       }
 
-      const carId    = normalizeCarId(carRaw);
-      const loop     = shipperToLoop(shipper);
-      const expShip  = safeDate(expShipRaw);
-      const rdd      = safeDate(rddRaw);
-      const shipDate = safeDate(shipDateRaw);
+      const carId   = normalizeCarId(carRaw);
+      const loop    = shipperToLoop(shipper);
+      const expShip = safeDate(expShipRaw);
+      const rdd     = safeDate(rddRaw);
+      const shipDate= safeDate(shipDateRaw);
 
       ORDER_DATA.push({
         otm: String(otm), shipper, receiver, destCity, carType,
         carRaw, carId, soNum: String(soNum), custPO: String(custPO||''),
-        expShip, rdd, status, shipDate, loop,
-        rowIndex: i+1 // 1-based row for future write-back
+        expShip, rdd, status, shipDate, loop, rowIndex: i+1
       });
     });
+
+    // Save to Supabase
+    setObStatus('saving', '⏳ Saving to database…');
+    try{
+      // Clear existing orders
+      await supabase.from('master_tracker_orders').delete().gte('id',0);
+
+      // Insert in chunks of 200
+      const rows_to_insert = ORDER_DATA.map(o=>({
+        otm: o.otm, shipper: o.shipper, receiver: o.receiver,
+        dest_city: o.destCity, car_type: o.carType, car_raw: o.carRaw,
+        car_id: o.carId, so_num: o.soNum, cust_po: o.custPO,
+        exp_ship: o.expShip?o.expShip.toISOString().slice(0,10):null,
+        rdd: o.rdd?o.rdd.toISOString().slice(0,10):null,
+        status: o.status,
+        ship_date: o.shipDate?o.shipDate.toISOString().slice(0,10):null,
+        loop: o.loop, row_index: o.rowIndex
+      }));
+      for(let i=0;i<rows_to_insert.length;i+=200){
+        const {error}=await supabase.from('master_tracker_orders').insert(rows_to_insert.slice(i,i+200));
+        if(error)throw error;
+      }
+
+      // Upsert meta row
+      await supabase.from('master_tracker_meta').upsert({
+        id:1, uploaded_at: new Date().toISOString(),
+        order_count: ORDER_DATA.length
+      },{onConflict:'id'});
+
+      ORDER_UPLOADED_AT = new Date();
+      setObStatus('saved', `✓ Saved ${ORDER_DATA.length} orders`);
+      setTimeout(()=>hideObStatus(), 3000);
+    }catch(err){
+      setObStatus('error','Save failed: '+err.message);
+    }
     renderOrderBoard();
   };
   r.readAsArrayBuffer(file);
+}
+
+// Load Order Board data from Supabase on page open
+async function loadOrderBoardFromDB(){
+  try{
+    const {data:meta} = await supabase.from('master_tracker_meta').select('*').eq('id',1).single();
+    if(!meta) return; // never uploaded
+
+    const {data:orders, error} = await supabase.from('master_tracker_orders').select('*');
+    if(error||!orders||!orders.length) return;
+
+    ORDER_UPLOADED_AT = new Date(meta.uploaded_at);
+    ORDER_DATA = orders.map(r=>({
+      otm: r.otm||'', shipper: r.shipper||'', receiver: r.receiver||'',
+      destCity: r.dest_city||'', carType: r.car_type||'',
+      carRaw: r.car_raw||'', carId: r.car_id||null,
+      soNum: r.so_num||'', custPO: r.cust_po||'',
+      expShip: r.exp_ship?new Date(r.exp_ship+'T12:00:00'):null,
+      rdd: r.rdd?new Date(r.rdd+'T12:00:00'):null,
+      status: r.status||'', shipDate: r.ship_date?new Date(r.ship_date+'T12:00:00'):null,
+      loop: r.loop||null, rowIndex: r.row_index
+    }));
+    renderOrderBoard();
+  }catch(e){
+    // silently fail — Order Board just shows empty state
+  }
+}
+
+let ORDER_UPLOADED_AT = null;
+
+function setObStatus(type, msg){
+  const el = document.getElementById('ob-status');
+  if(!el) return;
+  el.className = 'sb-status ' + type;
+  el.style.display = 'block';
+  el.innerHTML = (type==='saving'?'<span class="spin"></span>':'') + msg;
+}
+function hideObStatus(){
+  const el = document.getElementById('ob-status');
+  if(el) el.style.display='none';
 }
 
 function renderOrderBoard(){
@@ -1144,9 +1220,13 @@ function renderOrderBoard(){
   const shipped   = ORDER_DATA.filter(o=>o.status==='Shipped');
   const unshipped = ORDER_DATA.filter(o=>o.status==='Unshipped');
 
+  const updatedStr = ORDER_UPLOADED_AT
+    ? `Last updated: ${ORDER_UPLOADED_AT.toLocaleDateString('en-US',{month:'short',day:'numeric'})} at ${ORDER_UPLOADED_AT.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
+    : '';
+
   document.getElementById('tb4').textContent = ORDER_DATA.length;
   document.getElementById('ob-subtitle').textContent =
-    `${shipped.length} shipped · ${unshipped.length} unshipped · ${ORDER_DATA.length} total orders`;
+    `${shipped.length} shipped · ${unshipped.length} unshipped · ${ORDER_DATA.length} total${updatedStr?' · '+updatedStr:''}`;
 
   // Build a lookup from normalized car ID → live car data
   const carLookup = {};
@@ -1294,6 +1374,7 @@ window.switchTab = switchTab;
 window.setRange = setRange;
 window.renderShipHistory = renderShipHistory;
 window.renderOrderBoard = renderOrderBoard;
+window.loadOrderBoardFromDB = loadOrderBoardFromDB;
 if(sessionStorage.getItem('fleet-auth')==='1'){
   document.getElementById('pw-gate').style.display='none';
   init();
