@@ -832,6 +832,16 @@ function etaInfo(etaStr,etaDt,rd){
 }
 function dwCls(d){return d>=30?'crit':d>=7?'warn':'ok';}
 function dwLabel(d){return d>0?d.toFixed(1)+'d':'—';}
+
+// Build lookup: carId → order (from master tracker)
+function buildOrderLookup(){
+  const lookup={};
+  ORDER_DATA.forEach(o=>{
+    if(o.carId) lookup[o.carId]=o;
+  });
+  return lookup;
+}
+
 function detailRow(car,type){
   const dc=dwCls(car.dwell);
   let etaCls='eta-nu',etaD='';
@@ -839,7 +849,34 @@ function detailRow(car,type){
   else{const ei=etaInfo(car.etaStr,car.etaDt,REPORT_DATE);etaCls=ei.cls;etaD=ei.label;}
   const loc=(type==='loaded'||type==='inbound')?`${car.currentLoc} → ${car.destination}`:type==='shipped'?`→ ${car.destination}`:car.currentLoc;
   const note=car.note?car.note.slice(0,55)+(car.note.length>55?'…':''):'';
-  return `<div class="drow"><div class="dr-id">${car.id}</div><div class="dr-loc" title="${car.currentLoc}">${loc}</div>${etaD?`<div class="dr-eta ${etaCls}">${etaD}</div>`:''}<div class="dr-dwell ${dc}">${dwLabel(car.dwell)}</div>${note?`<div class="dr-note" title="${car.note}">${note}</div>`:''}</div>`;
+
+  // Inject order info for loaded cars
+  let orderTag='';
+  if(type==='loaded'){
+    const order=buildOrderLookup()[car.id];
+    if(order){
+      const rddStr=order.rdd?order.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      const today=REPORT_DATE||new Date();
+      const daysToRdd=order.rdd?Math.round((order.rdd-today)/86400000):null;
+      const rddCls=daysToRdd===null?'':daysToRdd<0?'color:var(--red)':daysToRdd<=5?'color:var(--yellow)':'color:var(--muted)';
+      orderTag=`<div class="dr-note" style="max-width:none;display:flex;gap:8px;flex-wrap:wrap;">
+        <span style="color:var(--text);font-weight:500;">${order.receiver}</span>
+        ${order.soNum?`<span style="color:var(--muted);">SO# ${order.soNum}</span>`:''}
+        ${rddStr?`<span style="${rddCls}">RDD: ${rddStr}</span>`:''}
+      </div>`;
+    }
+  }
+
+  return `<div class="drow" style="flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;width:100%;gap:0;">
+      <div class="dr-id">${car.id}</div>
+      <div class="dr-loc" title="${car.currentLoc}">${loc}</div>
+      ${etaD?`<div class="dr-eta ${etaCls}">${etaD}</div>`:''}
+      <div class="dr-dwell ${dc}">${dwLabel(car.dwell)}</div>
+      ${note?`<div class="dr-note" title="${car.note}">${note}</div>`:''}
+    </div>
+    ${orderTag?`<div style="padding:0 0 2px 105px;width:100%;">${orderTag}</div>`:''}
+  </div>`;
 }
 
 function updateHeader(){
@@ -977,17 +1014,21 @@ async function renderShipHistory(){
     <div class="sh-stat"><div class="sh-stat-n">${carriers.length}</div><div class="sh-stat-l">Carriers</div></div>
     <div class="sh-stat"><div class="sh-stat-n">${dests.length}</div><div class="sh-stat-l">Destinations</div></div>`;
 
-  bs.innerHTML='';
+    bs.innerHTML='';
   SITES.forEach(site=>{
     const ss=shipped.filter(c=>c.loop===site).sort((a,b)=>b.waybillDate-a.waybillDate);
+    const orderLookup=buildOrderLookup();
     bs.innerHTML+=`<div class="site-hist-card">
       <div class="site-hist-hdr"><div class="site-hist-name">${SITE_LBL[site]}</div><div class="site-hist-n">${ss.length}</div></div>
-      ${ss.map(c=>`<div class="sh-row">
-        <div class="sh-row-id">${c.id}</div>
-        <div class="sh-row-dest">${c.destination}</div>
-        <div class="sh-row-date">${c.waybillDate?c.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</div>
-        <div class="sh-row-carrier">${c.carrier||'—'}</div>
-      </div>`).join('')||'<div class="sh-row" style="color:var(--dim);padding:10px 12px;">No shipments in range</div>'}
+      ${ss.map(c=>{
+        const order=orderLookup[c.id];
+        return `<div class="sh-row">
+          <div class="sh-row-id">${c.id}</div>
+          <div class="sh-row-dest">${order?order.receiver:c.destination}</div>
+          <div class="sh-row-date">${c.waybillDate?c.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</div>
+          <div class="sh-row-carrier">${c.carrier||'—'}</div>
+        </div>`;
+      }).join('')||'<div class="sh-row" style="color:var(--dim);padding:10px 12px;">No shipments in range</div>'}
     </div>`;
   });
 
@@ -1030,6 +1071,14 @@ function renderTab3(){
     }
     const it=car.waybillDate?Math.round((REPORT_DATE-car.waybillDate)/86400000):null;
     const edo=car.etaDt?Math.round((car.etaDt-REPORT_DATE)/86400000):null;
+
+    // Pull order data from master tracker
+    const orderLookup=buildOrderLookup();
+    const order=orderLookup[car.id];
+    const rddStr=order&&order.rdd?order.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+    const daysToRdd=order&&order.rdd?Math.round((order.rdd-REPORT_DATE)/86400000):null;
+    const rddColor=daysToRdd===null?'var(--muted)':daysToRdd<0?'var(--red)':daysToRdd<=5?'var(--yellow)':'var(--muted)';
+
     return `<div class="${cc}">
       <div class="lcar-hdr">
         <div class="lcar-id">${car.id}</div>
@@ -1037,6 +1086,12 @@ function renderTab3(){
         <div><span class="lcar-loop-tag">${SITE_LBL[car.loop]||car.loop||'?'} loop</span></div>
         <div class="lcar-eta-big"><div class="lcar-eta-val ${ei.cls}">${ei.label}</div><div class="lcar-eta-lbl">Latest ETA</div></div>
       </div>
+      ${order?`<div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${order.receiver}</div>
+        ${order.soNum?`<div style="font-size:11px;color:var(--muted);">SO# <span style="color:var(--text);font-family:'IBM Plex Mono',monospace;">${order.soNum}</span></div>`:''}
+        ${order.otm?`<div style="font-size:11px;color:var(--muted);">OTM# <span style="color:var(--text);font-family:'IBM Plex Mono',monospace;">${order.otm}</span></div>`:''}
+        <div style="font-size:11px;color:var(--muted);">RDD: <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:${rddColor};">${rddStr}${daysToRdd!==null?' ('+Math.abs(daysToRdd)+'d '+(daysToRdd<0?'overdue':'out')+')':''}</span></div>
+      </div>`:''}
       <div class="lcar-stats">
         <div class="lcar-stat"><div class="lcar-stat-v">${car.waybillDate?car.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div><div class="lcar-stat-l">Shipped</div></div>
         <div class="lcar-stat"><div class="lcar-stat-v">${it!==null?it+'d':'—'}</div><div class="lcar-stat-l">Days in Transit</div></div>
@@ -1286,9 +1341,10 @@ function renderOrderBoard(){
         <div>
           <div class="ob-col-header">Empties available at origin sites</div>
           ${SITES.map(site=>{
-            const onSite = ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite');
+            const onSite  = ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite');
             const waiting = ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='waiting');
-            if(!onSite.length&&!waiting.length) return `<div style="font-size:11px;color:var(--muted);margin-bottom:10px;"><strong style="color:var(--text)">${SITE_LBL[site]}</strong> — no empties on site</div>`;
+            const held    = ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='held');
+            if(!onSite.length&&!waiting.length&&!held.length) return `<div style="font-size:11px;color:var(--muted);margin-bottom:10px;"><strong style="color:var(--text)">${SITE_LBL[site]}</strong> — no empties available</div>`;
             return `<div style="margin-bottom:12px;">
               <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">${SITE_LBL[site]}</div>
               ${onSite.map(c=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:4px;margin-bottom:4px;font-size:11px;">
@@ -1298,6 +1354,10 @@ function renderOrderBoard(){
               ${waiting.map(c=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;margin-bottom:4px;font-size:11px;">
                 <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--yellow)">${c.id}</span>
                 <span style="color:var(--muted);">waiting to be placed</span>
+              </div>`).join('')}
+              ${held.map(c=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:4px;margin-bottom:4px;font-size:11px;">
+                <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--blue)">${c.id}</span>
+                <span style="color:var(--muted);">delayed/held near site · ${c.currentLoc||''}</span>
               </div>`).join('')}
             </div>`;
           }).join('')}
