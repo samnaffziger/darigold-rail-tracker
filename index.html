@@ -1319,8 +1319,34 @@ function renderOrderBoard(){
       const rddCls = daysToRdd===null?'ok':daysToRdd<0?'late':daysToRdd<=5?'soon':'ok';
       const rddLbl = o.rdd?o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
 
+      // Check if daily report shows this car as empty — mismatch with master tracker
+      const carIsEmpty = live && live.section === 'EMPTY';
+      const carIsShop  = live && live.section === 'SHOP';
+
+      let alertHtml = '';
+      if(carIsEmpty){
+        const emptyDesc = live.emptyStatus==='onsite'  ? 'on-site empty at '+live.currentLoc :
+                          live.emptyStatus==='waiting' ? 'waiting to be placed at '+live.currentLoc :
+                          live.emptyStatus==='inbound' ? 'empty, heading to '+live.destination :
+                          live.emptyStatus==='held'    ? 'empty, delayed/held at '+live.currentLoc :
+                          'empty at '+live.currentLoc;
+        alertHtml = `<div style="display:flex;align-items:center;gap:7px;margin-top:7px;padding:7px 10px;
+          background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:11px;">
+          <span style="font-size:13px;">⚠️</span>
+          <span style="color:var(--yellow);font-weight:600;">Daily report shows car is ${emptyDesc}.</span>
+          <span style="color:var(--muted);">Update Master Tracker.</span>
+        </div>`;
+      } else if(carIsShop){
+        alertHtml = `<div style="display:flex;align-items:center;gap:7px;margin-top:7px;padding:7px 10px;
+          background:var(--orange-bg);border:1px solid var(--orange-bd);border-radius:4px;font-size:11px;">
+          <span style="font-size:13px;">🔧</span>
+          <span style="color:var(--orange);font-weight:600;">Daily report shows car is in the shop at ${live.currentLoc}.</span>
+          <span style="color:var(--muted);">Update Master Tracker.</span>
+        </div>`;
+      }
+
       let liveHtml = '';
-      if(live){
+      if(live && !carIsEmpty && !carIsShop){
         const etaInfo = (() => {
           const s = live.etaStr||'';
           const l = s.toLowerCase();
@@ -1339,11 +1365,15 @@ function renderOrderBoard(){
           <span class="ob-live-eta ${etaInfo.cls}">${etaInfo.label}</span>
           ${live.dwell>0?`<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">${live.dwell.toFixed(1)}d dwell</span>`:''}
         </div>`;
-      } else if(o.carId) {
+      } else if(o.carId && !live) {
         liveHtml = `<div class="ob-live"><span class="ob-live-label" style="color:var(--muted)">📍 Car not in today's report</span></div>`;
       }
 
-      html += `<div class="ob-order shipped">
+      // Card gets a yellow border if there's a mismatch
+      const cardCls = carIsEmpty||carIsShop ? 'ob-order shipped' : 'ob-order shipped';
+      const borderStyle = carIsEmpty ? 'border-color:var(--yellow-bd);' : carIsShop ? 'border-color:var(--orange-bd);' : '';
+
+      html += `<div class="${cardCls}" style="${borderStyle}">
         <div class="ob-order-top">
           <div>
             <div class="ob-order-customer">${o.receiver}</div>
@@ -1357,6 +1387,7 @@ function renderOrderBoard(){
           <span class="ob-meta-item"><strong>Type:</strong> ${o.carType}</span>
         </div>
         <div><span class="ob-car-chip assigned">${o.carId||o.carRaw||'—'}</span></div>
+        ${alertHtml}
         ${liveHtml}
       </div>`;
     });
