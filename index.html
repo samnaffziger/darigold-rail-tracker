@@ -1116,11 +1116,17 @@ function parseOrderFile(file){
 
       function safeDate(v){
         if(!v) return null;
-        if(v instanceof Date) return v;
+        if(v instanceof Date){
+          // Reject obviously bad years
+          if(v.getFullYear()<2000||v.getFullYear()>2100) return null;
+          return v;
+        }
         const s = String(v);
         if(s.startsWith('=')) return null;
         const d = new Date(s);
-        return isNaN(d)?null:d;
+        if(isNaN(d)) return null;
+        if(d.getFullYear()<2000||d.getFullYear()>2100) return null;
+        return d;
       }
 
       const carId   = normalizeCarId(carRaw);
@@ -1231,6 +1237,8 @@ function renderOrderBoard(){
   // Build a lookup from normalized car ID → live car data
   const carLookup = {};
   ALL_CARS.forEach(c=>{ carLookup[c.id] = c; });
+  console.log('Car lookup keys:', Object.keys(carLookup));
+  console.log('Order car IDs:', ORDER_DATA.filter(o=>o.carId).map(o=>o.carId));
 
   const content = document.getElementById('ob-content');
 
@@ -1320,8 +1328,8 @@ function renderOrderBoard(){
       const rddLbl = o.rdd?o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
 
       // Check if daily report shows this car as empty — mismatch with master tracker
-      const carIsEmpty = live && live.section === 'EMPTY';
-      const carIsShop  = live && live.section === 'SHOP';
+      const carIsEmpty = live && (live.section||'').toUpperCase() === 'EMPTY';
+      const carIsShop  = live && (live.section||'').toUpperCase() === 'SHOP';
 
       let alertHtml = '';
       if(carIsEmpty){
