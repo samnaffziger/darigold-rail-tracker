@@ -543,22 +543,20 @@ async function parseAndSave(ws, fname){
     if(f==='SHOP CARS'){sec='SHOP';return;}
     if(!f.startsWith('CRYX'))return;
 
-    // Auto-detect column layout by header count
-    // 14-col (new): [0]ID [1]Origin [2]BOL [3]Waybill [4]Consignee [5]Dest [6]CurLoc
-    //               [7]L/E [8]LastEvent [9]CLM [10]Carrier [11]ETA [12]Dwell [13]Note
-    // 15-col (old): same but with extra col at [3], everything else shifts +1
-    const firstRow=rows[1]||[];
-    const is14col=firstRow.length<=14;
+    // Detect column layout from header row — more reliable than row length
+    // 15-col (old): has 'PO Number' at col[3]
+    // 14-col (new): no PO Number column
+    const hasPOCol = (rows[0]||[]).some(h=>h&&String(h).toLowerCase().includes('po number'));
     const CI={
-      waybill: is14col?3:4,
-      consignee: is14col?4:5,
-      dest: is14col?5:6,
-      curLoc: is14col?6:7,
-      clm: is14col?9:10,
-      carrier: is14col?10:11,
-      eta: is14col?11:12,
-      dwell: is14col?12:13,
-      note: is14col?13:14
+      waybill:   hasPOCol?4:3,
+      consignee: hasPOCol?5:4,
+      dest:      hasPOCol?6:5,
+      curLoc:    hasPOCol?7:6,
+      clm:       hasPOCol?10:9,
+      carrier:   hasPOCol?11:10,
+      eta:       hasPOCol?12:11,
+      dwell:     hasPOCol?13:12,
+      note:      hasPOCol?14:13
     };
 
     let wbDt=null;
@@ -600,12 +598,19 @@ async function parseAndSave(ws, fname){
 
     const dest=String(row[CI.dest]||'').toUpperCase().trim();
     const origin=String(row[1]||'').toUpperCase().trim();
+    const curLocRaw=String(row[CI.curLoc]||'').toUpperCase().trim();
     const clm=String(row[CI.clm]||'').trim().toUpperCase();
 
     let loop=null;
-    if(sec==='SHOP')loop='SHOP';
-    else if(sec==='LOADED')loop=SITES.find(s=>origin.includes(s.split(',')[0]))||null;
-    else loop=SITES.find(s=>dest.includes(s.split(',')[0]))||null;
+    if(sec==='SHOP') loop='SHOP';
+    else if(sec==='LOADED') loop=SITES.find(s=>origin.includes(s.split(',')[0]))||null;
+    else {
+      // For empties: try dest first, then fall back to currentLoc
+      // (some reports use consignee name in dest, not city)
+      loop = SITES.find(s=>dest.includes(s.split(',')[0]))
+          || SITES.find(s=>curLocRaw.includes(s.split(',')[0]))
+          || null;
+    }
 
     let emptyStatus='inbound';
     if(sec==='EMPTY'){
