@@ -350,6 +350,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
         <div class="tab" data-tab="t2" onclick="switchTab('t2')">Shipment History <span class="tbadge" id="tb2">—</span></div>
         <div class="tab" data-tab="t3" onclick="switchTab('t3')">Loaded Cars <span class="tbadge" id="tb3">—</span></div>
         <div class="tab" data-tab="t4" onclick="switchTab('t4')">Order Board <span class="tbadge" id="tb4">—</span></div>
+        <div class="tab" data-tab="t5" onclick="switchTab('t5');loadCycleTime()">Cycle Times <span class="tbadge" id="tb5">—</span></div>
       </div>
       <div class="panel active" id="t1">
         <div id="changes-strip" style="display:none;"></div>
@@ -398,9 +399,93 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
           </div>
         </div>
       </div>
+      <div class="panel" id="t5">
+        <div class="ct-toolbar">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-size:14px;font-weight:600;color:var(--text);">Cycle Time Analysis</span>
+            <span style="font-size:11px;color:var(--muted);" id="ct-subtitle">Rolling 90 days</span>
+          </div>
+          <div class="ct-filters">
+            <span class="sh-label">Days back:</span>
+            <button class="btn" onclick="loadCycleTime(30)">30d</button>
+            <button class="btn" onclick="loadCycleTime(60)">60d</button>
+            <button class="btn" onclick="loadCycleTime(90)">90d</button>
+          </div>
+        </div>
+        <div class="ct-legend">
+          <div class="ct-leg-item"><div class="ct-leg-dot" style="background:#6e40c9"></div>Origin Dwell</div>
+          <div class="ct-leg-item"><div class="ct-leg-dot" style="background:#cc0000"></div>Loaded Transit</div>
+          <div class="ct-leg-item"><div class="ct-leg-dot" style="background:#d29922"></div>Dest. Dwell</div>
+          <div class="ct-leg-item"><div class="ct-leg-dot" style="background:#58a6ff"></div>Empty Transit</div>
+        </div>
+        <div id="ct-content"><div class="ct-loading">Click a time range above to load cycle time data</div></div>
+      </div>
     </div>
   </div>
 </div>
+
+<!-- t5 cycle time panel injected separately since it's outside app div structure -->
+<style>
+/* ── CYCLE TIME TAB ── */
+.ct-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+.ct-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.ct-loading{text-align:center;padding:40px;color:var(--muted);font-size:12px;}
+
+/* summary cards */
+.ct-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.ct-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;text-align:center;}
+.ct-card-n{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--accent);}
+.ct-card-l{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:4px;}
+.ct-card-s{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* table */
+.ct-table-wrap{overflow-x:auto;}
+.ct-table{width:100%;border-collapse:collapse;font-size:11px;}
+.ct-table th{
+  font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);
+  white-space:nowrap;cursor:pointer;user-select:none;background:var(--bg2);
+}
+.ct-table th:hover{color:var(--text);}
+.ct-table th.sort-asc::after{content:' ↑';color:var(--accent);}
+.ct-table th.sort-desc::after{content:' ↓';color:var(--accent);}
+.ct-table th.num{text-align:right;}
+.ct-table td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.ct-table tr:hover td{background:rgba(0,0,0,.02);}
+.ct-table tr:last-child td{border-bottom:none;}
+
+/* lane cell */
+.ct-lane{display:flex;flex-direction:column;gap:2px;}
+.ct-origin{font-size:12px;font-weight:600;color:var(--text);}
+.ct-dest{font-size:10px;color:var(--muted);}
+.ct-customer{font-size:10px;color:var(--muted);font-style:italic;}
+
+/* component cells */
+.ct-val{font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;}
+.ct-val.na{color:var(--dim);}
+.ct-val.ok{color:var(--text);}
+.ct-val.warn{color:var(--yellow);}
+.ct-val.hot{color:var(--red);}
+
+/* total cycle */
+.ct-total{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;text-align:right;}
+
+/* bar viz */
+.ct-bar-wrap{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:1px;margin-top:4px;min-width:80px;}
+.ct-bar-seg{height:100%;border-radius:1px;}
+.ct-bar-seg.origin-dwell{background:#6e40c9;}
+.ct-bar-seg.loaded-transit{background:#cc0000;}
+.ct-bar-seg.dest-dwell{background:#d29922;}
+.ct-bar-seg.empty-transit{background:#58a6ff;}
+
+/* legend */
+.ct-legend{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
+.ct-leg-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);}
+.ct-leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+
+.ct-note{font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;}
+</style>
 
 <!-- Password check — must be non-module so onclick can reach it -->
 <script>
@@ -1130,7 +1215,315 @@ function renderTab3(){
   }).join('');
 }
 
-function switchTab(id){
+// ── CYCLE TIME TAB ──
+let CT_DAYS = 90;
+let CT_LOADED = false;
+
+async function loadCycleTime(days){
+  days = days || CT_DAYS;
+  CT_DAYS = days;
+  CT_LOADED = true;
+  const content = document.getElementById('ct-content');
+  content.innerHTML = '<div class="ct-loading"><span class="spin"></span> Loading snapshot history…</div>';
+  document.getElementById('ct-subtitle').textContent = `Rolling ${days} days`;
+
+  try{
+    // Fetch all snapshots from the last N days
+    const fromDate = new Date(REPORT_DATE||new Date());
+    fromDate.setDate(fromDate.getDate() - days);
+    const fromStr = fromDate.toISOString().slice(0,10);
+
+    const {data:snaps, error} = await supabase
+      .from('fleet_snapshots')
+      .select('car_id,report_date,section,loop,origin,destination,current_loc,waybill_date,eta_date,dwell,empty_status,clm_code')
+      .gte('report_date', fromStr)
+      .order('report_date', {ascending:true});
+
+    if(error) throw error;
+    if(!snaps||!snaps.length){ content.innerHTML='<div class="ct-loading">No snapshot data in range</div>'; return; }
+
+    // Group by car_id → sorted array of daily snapshots
+    const byCar = {};
+    snaps.forEach(s=>{
+      if(!byCar[s.car_id]) byCar[s.car_id]=[];
+      byCar[s.car_id].push(s);
+    });
+
+    // For each car, find "trips" — a trip starts at waybill_date (loaded) and ends when empty
+    // We detect trips by finding transitions: EMPTY→LOADED (new trip starts)
+    const trips = [];
+
+    Object.entries(byCar).forEach(([carId, days_arr])=>{
+      // Find all distinct waybill dates for this car (= shipments)
+      const waybillDates = [...new Set(
+        days_arr.filter(s=>s.section==='LOADED'&&s.waybill_date)
+                .map(s=>s.waybill_date)
+      )];
+
+      waybillDates.forEach(wbDate=>{
+        // Get all LOADED snapshots for this waybill date
+        const loadedSnaps = days_arr.filter(s=>s.section==='LOADED'&&s.waybill_date===wbDate);
+        if(!loadedSnaps.length) return;
+
+        const firstLoaded = loadedSnaps[0];
+        const lastLoaded  = loadedSnaps[loadedSnaps.length-1];
+        const wbDt = new Date(wbDate+'T12:00:00');
+
+        // Origin = loop of loaded car
+        const origin = firstLoaded.loop;
+        // Destination = destination field from loaded snap
+        const destination = firstLoaded.destination||'';
+        // Current customer from Order Board if available
+        const orderLookup = buildOrderLookup();
+        const order = orderLookup[carId];
+        const customer = order ? order.receiver : '';
+
+        // ── 1. ORIGIN DWELL ──
+        // Look for snapshots just before waybill date where car was EMPTY at origin
+        const beforeLoad = days_arr.filter(s=>
+          s.section==='EMPTY' &&
+          s.report_date < wbDate &&
+          s.loop === origin
+        );
+        let originDwell = null;
+        if(beforeLoad.length){
+          // Find consecutive days at origin just before waybill
+          const sortedBefore = [...beforeLoad].sort((a,b)=>b.report_date.localeCompare(a.report_date));
+          let count = 0;
+          let prevDate = wbDate;
+          for(const s of sortedBefore){
+            const diff = Math.round((new Date(prevDate) - new Date(s.report_date)) / 86400000);
+            if(diff <= 3){ count++; prevDate = s.report_date; }
+            else break;
+          }
+          originDwell = count > 0 ? count : null;
+        }
+        // Fallback: use dwell from first loaded snapshot if it's plausible
+        if(originDwell === null && firstLoaded.dwell > 0 && firstLoaded.dwell < 30){
+          originDwell = Math.round(firstLoaded.dwell);
+        }
+
+        // ── 2. LOADED TRANSIT ──
+        // Days from waybill_date to first appearance as EMPTY (delivered)
+        const firstEmpty = days_arr.find(s=>
+          s.section==='EMPTY' &&
+          s.report_date > wbDate
+        );
+        let loadedTransit = null;
+        if(firstEmpty){
+          const diff = Math.round((new Date(firstEmpty.report_date) - wbDt) / 86400000);
+          if(diff > 0 && diff < 60) loadedTransit = diff;
+        } else if(lastLoaded){
+          // Still in transit — use days since waybill as lower bound
+          const diff = Math.round((new Date(lastLoaded.report_date) - wbDt) / 86400000);
+          if(diff > 0) loadedTransit = diff; // mark as in-progress
+        }
+
+        // ── 3. DESTINATION DWELL ──
+        // Days the car spent as EMPTY at a non-origin location after delivery
+        let destDwell = null;
+        if(firstEmpty){
+          const destEmptySnaps = days_arr.filter(s=>
+            s.section==='EMPTY' &&
+            s.report_date >= firstEmpty.report_date &&
+            s.loop !== origin // at destination, not back home yet
+          );
+          if(destEmptySnaps.length > 0){
+            destDwell = destEmptySnaps.length; // proxy: # of days observed there
+          }
+        }
+
+        // ── 4. EMPTY TRANSIT ──
+        // Days from leaving destination (empty) to arriving at origin
+        let emptyTransit = null;
+        if(firstEmpty){
+          const returnSnaps = days_arr.filter(s=>
+            s.section==='EMPTY' &&
+            s.report_date > firstEmpty.report_date &&
+            s.loop === origin &&
+            (s.empty_status==='onsite'||s.empty_status==='waiting'||s.empty_status==='held')
+          );
+          if(returnSnaps.length){
+            const firstReturn = returnSnaps[0];
+            const transitDays = Math.round(
+              (new Date(firstReturn.report_date) - new Date(firstEmpty.report_date)) / 86400000
+            );
+            if(transitDays > 0 && transitDays < 45) emptyTransit = transitDays;
+          }
+        }
+
+        const totalCycle = (originDwell||0)+(loadedTransit||0)+(destDwell||0)+(emptyTransit||0);
+
+        trips.push({
+          carId, origin, destination, customer, wbDate, wbDt,
+          originDwell, loadedTransit, destDwell, emptyTransit, totalCycle,
+          inProgress: !firstEmpty
+        });
+      });
+    });
+
+    if(!trips.length){
+      content.innerHTML='<div class="ct-loading">No completed trips found in this date range. Try extending the range.</div>';
+      return;
+    }
+
+    // Group by origin + destination lane
+    const lanes = {};
+    trips.forEach(t=>{
+      // Normalize destination to first 2 words (city name) to group variants
+      const destKey = t.destination.split(',')[0].trim().toUpperCase() || 'UNKNOWN';
+      const key = `${t.origin||'?'}|||${destKey}`;
+      if(!lanes[key]) lanes[key]={
+        origin:t.origin, destination:t.destination,
+        destKey, customer:t.customer, trips:[]
+      };
+      lanes[key].trips.push(t);
+      // Use most recent customer name
+      if(t.customer) lanes[key].customer = t.customer;
+    });
+
+    // Calculate averages per lane
+    const avg = arr => arr.filter(v=>v!==null&&v!==undefined).reduce((a,b)=>a+b,0) /
+                       (arr.filter(v=>v!==null&&v!==undefined).length||1);
+    const laneRows = Object.values(lanes).map(lane=>{
+      const completed = lane.trips.filter(t=>!t.inProgress);
+      return {
+        origin: lane.origin,
+        destination: lane.destination,
+        customer: lane.customer,
+        tripCount: lane.trips.length,
+        completedCount: completed.length,
+        avgOriginDwell:    avg(lane.trips.map(t=>t.originDwell)),
+        avgLoadedTransit:  avg(lane.trips.map(t=>t.loadedTransit)),
+        avgDestDwell:      avg(completed.map(t=>t.destDwell)),
+        avgEmptyTransit:   avg(completed.map(t=>t.emptyTransit)),
+        avgTotalCycle:     avg(completed.map(t=>t.totalCycle))
+      };
+    }).filter(r=>r.tripCount>0).sort((a,b)=>b.tripCount-a.tripCount);
+
+    // Fleet averages
+    const fleetAvgOrigin   = avg(laneRows.map(r=>r.avgOriginDwell));
+    const fleetAvgLoaded   = avg(laneRows.map(r=>r.avgLoadedTransit));
+    const fleetAvgDest     = avg(laneRows.map(r=>r.avgDestDwell));
+    const fleetAvgEmpty    = avg(laneRows.map(r=>r.avgEmptyTransit));
+    const fleetAvgTotal    = avg(laneRows.map(r=>r.avgTotalCycle));
+
+    document.getElementById('tb5').textContent = laneRows.length;
+
+    const fmt = v => v>0 ? v.toFixed(1)+'d' : '—';
+    const valCls = (v, warn, hot) => !v||v===0?'na':v>=hot?'hot':v>=warn?'warn':'ok';
+
+    let html = `
+    <div class="ct-summary">
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgOrigin)}</div><div class="ct-card-l">Avg Origin Dwell</div><div class="ct-card-s">all lanes</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgLoaded)}</div><div class="ct-card-l">Avg Loaded Transit</div><div class="ct-card-s">all lanes</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgDest)}</div><div class="ct-card-l">Avg Dest. Dwell</div><div class="ct-card-s">completed trips</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgEmpty)}</div><div class="ct-card-l">Avg Empty Transit</div><div class="ct-card-s">completed trips</div></div>
+    </div>
+    <div class="ct-table-wrap">
+    <table class="ct-table" id="ct-tbl">
+      <thead><tr>
+        <th onclick="sortCT('origin')">Origin</th>
+        <th onclick="sortCT('destination')">Destination</th>
+        <th onclick="sortCT('customer')">Customer</th>
+        <th class="num" onclick="sortCT('tripCount')"># Trips</th>
+        <th class="num" onclick="sortCT('avgOriginDwell')">Origin Dwell</th>
+        <th class="num" onclick="sortCT('avgLoadedTransit')">Loaded Transit</th>
+        <th class="num" onclick="sortCT('avgDestDwell')">Dest. Dwell</th>
+        <th class="num" onclick="sortCT('avgEmptyTransit')">Empty Transit</th>
+        <th class="num" onclick="sortCT('avgTotalCycle')">Total Cycle</th>
+        <th>Breakdown</th>
+      </tr></thead>
+      <tbody id="ct-tbody">
+      ${laneRows.map(r=>{
+        const total = (r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
+        const pct = v => total>0?Math.round(((v||0)/total)*100):0;
+        return `<tr>
+          <td><div class="ct-lane"><div class="ct-origin">${SITE_LBL[r.origin]||r.origin||'—'}</div></div></td>
+          <td><div class="ct-lane"><div class="ct-origin">${r.destination}</div></div></td>
+          <td><div class="ct-customer">${r.customer||'—'}</div></td>
+          <td><div class="ct-val ok" style="text-align:right;">${r.tripCount}${r.completedCount<r.tripCount?` <span style="color:var(--muted);font-size:9px;">(${r.completedCount} complete)</span>`:''}</div></td>
+          <td><div class="ct-val ${valCls(r.avgOriginDwell,5,10)}">${fmt(r.avgOriginDwell)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgLoadedTransit,7,14)}">${fmt(r.avgLoadedTransit)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgDestDwell,5,14)}">${fmt(r.avgDestDwell)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgEmptyTransit,7,14)}">${fmt(r.avgEmptyTransit)}</div></td>
+          <td><div class="ct-total ${valCls(r.avgTotalCycle,21,35)}">${fmt(r.avgTotalCycle)}</div></td>
+          <td>
+            <div class="ct-bar-wrap">
+              <div class="ct-bar-seg origin-dwell" style="width:${pct(r.avgOriginDwell)}%"></div>
+              <div class="ct-bar-seg loaded-transit" style="width:${pct(r.avgLoadedTransit)}%"></div>
+              <div class="ct-bar-seg dest-dwell" style="width:${pct(r.avgDestDwell)}%"></div>
+              <div class="ct-bar-seg empty-transit" style="width:${pct(r.avgEmptyTransit)}%"></div>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div class="ct-note">
+      <strong>How cycle times are calculated:</strong> Each metric is derived from daily snapshots stored when you upload the TG report.
+      <strong>Origin Dwell</strong> = days car was empty at origin before loading.
+      <strong>Loaded Transit</strong> = waybill date to first day car appears empty (delivered).
+      <strong>Dest. Dwell</strong> = days car sat empty at destination before heading back.
+      <strong>Empty Transit</strong> = days from leaving destination empty to arriving at origin.
+      Accuracy improves with more consecutive daily uploads — gaps in upload history create ±1–2 day variance.
+      Rows shown in <span style="color:var(--yellow)">yellow</span> exceed moderate thresholds; <span style="color:var(--red)">red</span> exceeds high thresholds.
+    </div>`;
+
+    content.innerHTML = html;
+    CT_LANE_ROWS = laneRows;
+    CT_SORT_COL = 'tripCount';
+    CT_SORT_DIR = 'desc';
+
+  }catch(e){
+    content.innerHTML=`<div class="ct-loading" style="color:var(--red);">Error loading cycle times: ${e.message}</div>`;
+  }
+}
+
+let CT_LANE_ROWS=[], CT_SORT_COL='tripCount', CT_SORT_DIR='desc';
+
+function sortCT(col){
+  if(CT_SORT_COL===col) CT_SORT_DIR=CT_SORT_DIR==='asc'?'desc':'asc';
+  else{CT_SORT_COL=col;CT_SORT_DIR='desc';}
+  const sorted=[...CT_LANE_ROWS].sort((a,b)=>{
+    const av=a[col]||0, bv=b[col]||0;
+    const av2=typeof av==='string'?av:av;
+    const bv2=typeof bv==='string'?bv:bv;
+    return CT_SORT_DIR==='asc'?(av2>bv2?1:-1):(av2<bv2?1:-1);
+  });
+  const fmt=v=>v>0?v.toFixed(1)+'d':'—';
+  const valCls=(v,w,h)=>!v||v===0?'na':v>=h?'hot':v>=w?'warn':'ok';
+  const tbody=document.getElementById('ct-tbody');
+  if(!tbody)return;
+  tbody.innerHTML=sorted.map(r=>{
+    const total=(r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
+    const pct=v=>total>0?Math.round(((v||0)/total)*100):0;
+    return `<tr>
+      <td><div class="ct-origin">${SITE_LBL[r.origin]||r.origin||'—'}</div></td>
+      <td><div class="ct-origin">${r.destination}</div></td>
+      <td><div class="ct-customer">${r.customer||'—'}</div></td>
+      <td><div class="ct-val ok" style="text-align:right;">${r.tripCount}</div></td>
+      <td><div class="ct-val ${valCls(r.avgOriginDwell,5,10)}">${fmt(r.avgOriginDwell)}</div></td>
+      <td><div class="ct-val ${valCls(r.avgLoadedTransit,7,14)}">${fmt(r.avgLoadedTransit)}</div></td>
+      <td><div class="ct-val ${valCls(r.avgDestDwell,5,14)}">${fmt(r.avgDestDwell)}</div></td>
+      <td><div class="ct-val ${valCls(r.avgEmptyTransit,7,14)}">${fmt(r.avgEmptyTransit)}</div></td>
+      <td><div class="ct-total ${valCls(r.avgTotalCycle,21,35)}">${fmt(r.avgTotalCycle)}</div></td>
+      <td><div class="ct-bar-wrap">
+        <div class="ct-bar-seg origin-dwell" style="width:${pct(r.avgOriginDwell)}%"></div>
+        <div class="ct-bar-seg loaded-transit" style="width:${pct(r.avgLoadedTransit)}%"></div>
+        <div class="ct-bar-seg dest-dwell" style="width:${pct(r.avgDestDwell)}%"></div>
+        <div class="ct-bar-seg empty-transit" style="width:${pct(r.avgEmptyTransit)}%"></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+  // Update header sort indicators
+  document.querySelectorAll('.ct-table th').forEach(th=>{
+    th.classList.remove('sort-asc','sort-desc');
+    if(th.getAttribute('onclick')===`sortCT('${CT_SORT_COL}')`)
+      th.classList.add(CT_SORT_DIR==='asc'?'sort-asc':'sort-desc');
+  });
+}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===id));
 }
@@ -1494,6 +1887,8 @@ window.setRange = setRange;
 window.renderShipHistory = renderShipHistory;
 window.renderOrderBoard = renderOrderBoard;
 window.loadOrderBoardFromDB = loadOrderBoardFromDB;
+window.loadCycleTime = loadCycleTime;
+window.sortCT = sortCT;
 if(sessionStorage.getItem('fleet-auth')==='1'){
   document.getElementById('pw-gate').style.display='none';
   init();
