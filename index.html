@@ -310,7 +310,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 
 <!-- CONFIG BANNER -->
 <div id="config-banner">
-  ⚙️ <strong>Setup required:</strong> Replace <code>YOUR_SUPABASE_URL</code> and <code>YOUR_SUPABASE_ANON_KEY</code> at the top of the &lt;script&gt; block with your project credentials.
+  ⚙️ <strong>Setup required:</strong> Replace <code>https://vlwstqdbsvxgblausxis.supabase.co</code> and <code>YOUR_SUPABASE_ANON_KEY</code> at the top of the &lt;script&gt; block with your project credentials.
   &nbsp;|&nbsp; <a onclick="document.getElementById('config-banner').style.display='none'">Dismiss</a>
 </div>
 
@@ -525,7 +525,7 @@ let ALL_CARS=[], REPORT_DATE=null, REPORT_DATE_KEY='', LOADED_DATE_SET=new Set()
 
 // ── INIT: load most recent date from DB on page open ──
 async function init(){
-  if(SUPABASE_URL==='YOUR_SUPABASE_URL'){
+  if(SUPABASE_URL==='https://vlwstqdbsvxgblausxis.supabase.co'){
     document.getElementById('ph-title').textContent='Configure Supabase to get started';
     document.getElementById('ph-sub').textContent='See the yellow banner above for instructions';
     document.getElementById('config-banner').style.display='flex';
