@@ -1231,7 +1231,7 @@ async function loadCycleTime(days){
     // Fetch ALL snapshots for all cars — we need full history to detect state transitions
     const {data:snaps, error} = await supabase
       .from('fleet_snapshots')
-      .select('car_id,report_date,section,loop,origin,destination,current_loc,waybill_date,dwell,empty_status,clm_code')
+      .select('car_id,report_date,section,loop,origin,destination,current_loc,waybill_date,eta_str,dwell,empty_status,clm_code')
       .order('report_date', {ascending:true});
 
     if(error) throw error;
@@ -1299,27 +1299,92 @@ async function loadCycleTime(days){
         let k = i;
         let loadedDays = 0;
         let firstEmptyIdx = -1;
+        let firstConstructiveIdx = -1;
+        let constructiveStartDate = null; // actual date car first went constructive
+
         while(k < dayArr.length){
           const cur = dayArr[k];
           if(cur.section === 'LOADED' && cur.waybill_date === waybillDate){
-            loadedDays++;
+            const isPlaced = cur.clm_code === 'Y' || cur.clm_code === 'Z' ||
+              (cur.eta_str && (cur.eta_str.toLowerCase().includes('constructive') ||
+                               cur.eta_str.toLowerCase().includes('actual')));
+            if(isPlaced){
+              if(firstConstructiveIdx < 0){
+                firstConstructiveIdx = k;
+                // Use dwell to back-calculate when constructive placement actually started
+                // constructive start = report_date - dwell_days
+                if(cur.dwell && cur.dwell > 0){
+                  const reportDt = new Date(cur.report_date + 'T12:00:00');
+                  reportDt.setDate(reportDt.getDate() - Math.round(cur.dwell));
+                  constructiveStartDate = reportDt.toISOString().slice(0,10);
+                } else {
+                  constructiveStartDate = cur.report_date;
+                }
+              }
+            } else {
+              if(firstConstructiveIdx < 0) loadedDays++;
+            }
           } else if(cur.section === 'EMPTY'){
             firstEmptyIdx = k;
             break;
           } else if(cur.section === 'LOADED' && cur.waybill_date !== waybillDate){
-            // New trip started — no delivery detected
             break;
           }
           k++;
         }
-        const loadedTransit = loadedDays > 0 ? loadedDays : null;
+
+        // Loaded transit = waybill date → constructive start date (or first empty if never constructive)
+        let loadedTransit = null;
+        if(constructiveStartDate){
+          const wbDt = new Date(waybillDate + 'T12:00:00');
+          const csDt = new Date(constructiveStartDate + 'T12:00:00');
+          const diff = Math.round((csDt - wbDt) / 86400000);
+          if(diff > 0) loadedTransit = diff;
+          else if(loadedDays > 0) loadedTransit = loadedDays; // fallback
+        } else if(loadedDays > 0){
+          loadedTransit = loadedDays;
+        } else if(firstEmptyIdx >= 0){
+          // Never went constructive — count waybill to first empty
+          const wbDt = new Date(waybillDate + 'T12:00:00');
+          const emDt = new Date(dayArr[firstEmptyIdx].report_date + 'T12:00:00');
+          const diff = Math.round((emDt - wbDt) / 86400000);
+          if(diff > 0) loadedTransit = diff;
+        }
 
         // ── 3. DESTINATION DWELL ──
-        // EMPTY snapshots after delivery where loop !== origin (still at destination)
+        // Use the dwell field from the most recent constructive/placed snapshot
+        // This is the most accurate reading — it's the actual days at destination
         let destDwell = null;
         let firstReturnIdx = -1;
+
+        if(firstConstructiveIdx >= 0){
+          // Find the last constructive snapshot for this waybill — it has the most current dwell
+          let lastConstructiveSnap = null;
+          let m = firstConstructiveIdx;
+          while(m < dayArr.length){
+            const cur = dayArr[m];
+            if(cur.section !== 'LOADED' || cur.waybill_date !== waybillDate) break;
+            const isPlaced = cur.clm_code === 'Y' || cur.clm_code === 'Z' ||
+              (cur.eta_str && (cur.eta_str.toLowerCase().includes('constructive') ||
+                               cur.eta_str.toLowerCase().includes('actual')));
+            if(isPlaced) lastConstructiveSnap = cur;
+            m++;
+          }
+          // Use the dwell from the last constructive snapshot if available
+          if(lastConstructiveSnap && lastConstructiveSnap.dwell > 0){
+            destDwell = Math.round(lastConstructiveSnap.dwell);
+          } else if(constructiveStartDate){
+            // Fallback: count days from constructive start to today's report
+            const csDt = new Date(constructiveStartDate + 'T12:00:00');
+            const rdDt = new Date((REPORT_DATE_KEY||new Date().toISOString().slice(0,10)) + 'T12:00:00');
+            const diff = Math.round((rdDt - csDt) / 86400000);
+            if(diff > 0) destDwell = diff;
+          }
+        }
+
+        // Also add EMPTY days at destination after car goes empty (post-unload dwell)
+        let emptyDestDays = 0;
         if(firstEmptyIdx >= 0){
-          let destDays = 0;
           let m = firstEmptyIdx;
           while(m < dayArr.length){
             const cur = dayArr[m];
@@ -1328,17 +1393,15 @@ async function loadCycleTime(days){
               firstReturnIdx = m;
               break;
             }
-            destDays++;
+            emptyDestDays++;
             m++;
           }
-          if(destDays > 0) destDwell = destDays;
+          if(emptyDestDays > 0) destDwell = (destDwell||0) + emptyDestDays;
         }
 
         // ── 4. EMPTY TRANSIT ──
-        // Days from leaving destination (EMPTY, not at origin) to arriving at origin
         let emptyTransit = null;
         if(firstEmptyIdx >= 0){
-          // Find first day heading back (not at destination, not yet at origin onsite)
           let inboundStart = -1;
           let n = firstEmptyIdx;
           while(n < dayArr.length){
@@ -1352,19 +1415,21 @@ async function loadCycleTime(days){
           if(inboundStart >= 0 && firstReturnIdx > inboundStart){
             emptyTransit = firstReturnIdx - inboundStart;
           } else if(firstReturnIdx > firstEmptyIdx && destDwell !== null){
-            // Estimate: gap between delivery and return minus dest dwell
             const totalEmpty = firstReturnIdx - firstEmptyIdx;
-            const estimated = totalEmpty - (destDwell||0);
+            const estimated = totalEmpty - emptyDestDays;
             if(estimated > 0) emptyTransit = estimated;
           }
         }
 
-        // Only add trip if we have at least origin dwell + loaded transit
-        if(loadedTransit !== null){
+        // Mark complete if we have dest dwell (either constructive or empty at dest)
+        // Car still in constructive = in progress until it goes empty
+        const isStillConstructive = firstConstructiveIdx >= 0 && firstEmptyIdx < 0;
+
+        if(loadedTransit !== null || constructiveDays > 0){
           trips.push({
             carId, origin, destination, waybillDate,
             originDwell, loadedTransit, destDwell, emptyTransit,
-            complete: destDwell !== null
+            complete: destDwell !== null && !isStillConstructive
           });
         }
 
