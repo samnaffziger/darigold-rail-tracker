@@ -1429,6 +1429,10 @@ async function loadCycleTime(days){
     const fmt = v => (v===null||v===undefined||v<=0) ? '—' : v.toFixed(1)+'d';
     const valCls = (v,warn,hot) => (!v||v<=0)?'na':v>=hot?'hot':v>=warn?'warn':'ok';
 
+    // Store trips on window for drill-down access
+    window._ctTrips = trips;
+    window._ctLaneRows = laneRows;
+
     let html = `
     <div class="ct-summary">
       <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgOrigin)}</div><div class="ct-card-l">Avg Origin Dwell</div><div class="ct-card-s">all lanes</div></div>
@@ -1436,33 +1440,33 @@ async function loadCycleTime(days){
       <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgDest)}</div><div class="ct-card-l">Avg Dest. Dwell</div><div class="ct-card-s">completed loops</div></div>
       <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgEmpty)}</div><div class="ct-card-l">Avg Empty Transit</div><div class="ct-card-s">completed loops</div></div>
     </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">Click any row to see individual shipment details</div>
     <div class="ct-table-wrap">
     <table class="ct-table" id="ct-tbl">
       <thead><tr>
         <th onclick="sortCT('origin')">Origin</th>
         <th onclick="sortCT('destination')">Destination / Customer</th>
         <th class="num" onclick="sortCT('tripCount')"># Trips</th>
-        <th class="num" onclick="sortCT('avgOriginDwell')">Origin Dwell</th>
-        <th class="num" onclick="sortCT('avgLoadedTransit')">Loaded Transit</th>
-        <th class="num" onclick="sortCT('avgDestDwell')">Dest. Dwell</th>
-        <th class="num" onclick="sortCT('avgEmptyTransit')">Empty Transit</th>
-        <th class="num" onclick="sortCT('avgTotalCycle')">Total Cycle</th>
+        <th class="num" onclick="sortCT('avgOriginDwell')">Avg Origin Dwell</th>
+        <th class="num" onclick="sortCT('avgLoadedTransit')">Avg Loaded Transit</th>
+        <th class="num" onclick="sortCT('avgDestDwell')">Avg Dest. Dwell</th>
+        <th class="num" onclick="sortCT('avgEmptyTransit')">Avg Empty Transit</th>
+        <th class="num" onclick="sortCT('avgTotalCycle')">Avg Total Cycle</th>
         <th>Breakdown</th>
       </tr></thead>
       <tbody id="ct-tbody">
-      ${laneRows.map(r=>{
+      ${laneRows.map((r,idx)=>{
         const total=(r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
         const pct=v=>total>0?Math.round(((v||0)/total)*100):0;
-        const totalCycle=(r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
-        return `<tr>
+        return `<tr style="cursor:pointer;" onclick="showCTDrilldown(${idx})" title="Click to see individual shipments">
           <td><div class="ct-origin">${SITE_LBL[r.origin]||r.origin||'—'}</div></td>
           <td><div class="ct-origin" style="font-size:11px;">${r.destination}</div>${r.customer?`<div class="ct-customer">${r.customer}</div>`:''}</td>
-          <td><div class="ct-val ok" style="text-align:right;">${r.tripCount}${r.completedCount<r.tripCount?` <span style="color:var(--muted);font-size:9px;">(${r.completedCount} done)</span>`:''}</div></td>
+          <td><div class="ct-val ok" style="text-align:right;">${r.tripCount}${r.completedCount<r.tripCount?` <span style="color:var(--muted);font-size:9px;">(${r.completedCount} complete)</span>`:''}</div></td>
           <td><div class="ct-val ${valCls(r.avgOriginDwell,5,10)}">${fmt(r.avgOriginDwell)}</div></td>
           <td><div class="ct-val ${valCls(r.avgLoadedTransit,7,14)}">${fmt(r.avgLoadedTransit)}</div></td>
           <td><div class="ct-val ${valCls(r.avgDestDwell,5,14)}">${fmt(r.avgDestDwell)}</div></td>
           <td><div class="ct-val ${valCls(r.avgEmptyTransit,7,14)}">${fmt(r.avgEmptyTransit)}</div></td>
-          <td><div class="ct-total ${valCls(totalCycle,21,35)}">${totalCycle>0?totalCycle.toFixed(1)+'d':'—'}</div></td>
+          <td><div class="ct-total ${valCls(total,21,35)}">${total>0?total.toFixed(1)+'d':'—'}</div></td>
           <td><div class="ct-bar-wrap">
             <div class="ct-bar-seg origin-dwell" style="width:${pct(r.avgOriginDwell)}%"></div>
             <div class="ct-bar-seg loaded-transit" style="width:${pct(r.avgLoadedTransit)}%"></div>
@@ -1477,11 +1481,42 @@ async function loadCycleTime(days){
     <div class="ct-note">
       <strong>How cycle times are calculated</strong> from daily snapshot history:
       <strong>Origin Dwell</strong> = consecutive EMPTY days at origin before loading.
-      <strong>Loaded Transit</strong> = days car appears as LOADED in daily reports (waybill date to delivery).
+      <strong>Loaded Transit</strong> = days car appears as LOADED in daily reports.
       <strong>Dest. Dwell</strong> = EMPTY days at destination before heading back.
       <strong>Empty Transit</strong> = EMPTY+inbound days returning to origin.
-      Completed loops (all 4 components available) show full cycle. Partial rows show data available so far.
-      <strong>${trips.length} trips</strong> detected across <strong>${laneRows.length} lanes</strong> in the last ${days} days.
+      <strong>${trips.length} shipments</strong> across <strong>${laneRows.length} lanes</strong> in the last ${days} days.
+      Dest. Dwell and Empty Transit show <strong>—</strong> for trips still in progress.
+    </div>
+
+    <!-- DRILL-DOWN MODAL -->
+    <div id="ct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:90%;max-width:900px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
+          <div>
+            <div id="ct-modal-title" style="font-size:14px;font-weight:600;color:var(--text);"></div>
+            <div id="ct-modal-sub" style="font-size:11px;color:var(--muted);margin-top:2px;"></div>
+          </div>
+          <button onclick="document.getElementById('ct-modal').style.display='none'"
+            style="background:none;border:1px solid var(--border);border-radius:4px;padding:4px 10px;cursor:pointer;color:var(--muted);font-size:12px;">✕ Close</button>
+        </div>
+        <div style="overflow-y:auto;padding:16px 18px;">
+          <table class="ct-table" style="width:100%;">
+            <thead><tr>
+              <th>Car ID</th>
+              <th>Ship Date</th>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th class="num">Origin Dwell</th>
+              <th class="num">Loaded Transit</th>
+              <th class="num">Dest. Dwell</th>
+              <th class="num">Empty Transit</th>
+              <th class="num">Total Cycle</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody id="ct-modal-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>`;
 
     content.innerHTML = html;
@@ -1896,6 +1931,46 @@ function renderOrderBoard(){
 }
 
 // ── START ──
+function showCTDrilldown(laneIdx){
+  const lane = CT_LANE_ROWS[laneIdx];
+  if(!lane) return;
+  const trips = (window._ctTrips||[]).filter(t=>{
+    const destKey=(t.destination||'').split(',')[0].trim().toUpperCase();
+    const laneDestKey=(lane.destination||'').split(',')[0].trim().toUpperCase();
+    return t.origin===lane.origin && destKey===laneDestKey;
+  });
+  const modal = document.getElementById('ct-modal');
+  const fmt = v=>(v===null||v===undefined||v<=0)?'—':v.toFixed(1)+'d';
+  const valCls=(v,w,h)=>(!v||v<=0)?'na':v>=h?'hot':v>=w?'warn':'ok';
+  document.getElementById('ct-modal-title').textContent=`${SITE_LBL[lane.origin]||lane.origin} → ${lane.destination}`;
+  document.getElementById('ct-modal-sub').textContent=`${trips.length} shipment${trips.length!==1?'s':''} · ${lane.customer||''}`;
+  const orderLookup=buildOrderLookup();
+  const sorted=[...trips].sort((a,b)=>b.waybillDate.localeCompare(a.waybillDate));
+  document.getElementById('ct-modal-tbody').innerHTML=sorted.map(t=>{
+    const order=orderLookup[t.carId];
+    const soNum=order?(order.soNum||order.otm||'—'):'—';
+    const customer=order?(order.receiver||'—'):(lane.customer||'—');
+    const total=(t.originDwell||0)+(t.loadedTransit||0)+(t.destDwell||0)+(t.emptyTransit||0);
+    const statusLabel=t.complete?
+      `<span style="color:var(--green);font-size:10px;font-weight:600;">✓ Complete</span>`:
+      `<span style="color:var(--yellow);font-size:10px;">In Progress</span>`;
+    return `<tr>
+      <td><span style="font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11px;">${t.carId}</span></td>
+      <td><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${t.waybillDate}</span></td>
+      <td><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">${soNum}</span></td>
+      <td style="font-size:11px;color:var(--muted);">${customer}</td>
+      <td><div class="ct-val ${valCls(t.originDwell,5,10)}">${fmt(t.originDwell)}</div></td>
+      <td><div class="ct-val ${valCls(t.loadedTransit,7,14)}">${fmt(t.loadedTransit)}</div></td>
+      <td><div class="ct-val ${valCls(t.destDwell,5,14)}">${fmt(t.destDwell)}</div></td>
+      <td><div class="ct-val ${valCls(t.emptyTransit,7,14)}">${fmt(t.emptyTransit)}</div></td>
+      <td><div class="ct-total ${valCls(total,21,35)}">${total>0?total.toFixed(1)+'d':'—'}</div></td>
+      <td>${statusLabel}</td>
+    </tr>`;
+  }).join('');
+  modal.style.display='flex';
+  modal.onclick=e=>{if(e.target===modal)modal.style.display='none';};
+}
+
 window._fleetInit = init;
 window.switchTab = switchTab;
 window.setRange = setRange;
@@ -1904,6 +1979,7 @@ window.renderOrderBoard = renderOrderBoard;
 window.loadOrderBoardFromDB = loadOrderBoardFromDB;
 window.loadCycleTime = loadCycleTime;
 window.sortCT = sortCT;
+window.showCTDrilldown = showCTDrilldown;
 if(sessionStorage.getItem('fleet-auth')==='1'){
   document.getElementById('pw-gate').style.display='none';
   init();
