@@ -1224,6 +1224,280 @@ async function loadCycleTime(days){
   CT_DAYS = days;
   CT_LOADED = true;
   const content = document.getElementById('ct-content');
+  content.innerHTML = '<div class="ct-loading"><span class="spin"></span> Loading full snapshot history…</div>';
+  document.getElementById('ct-subtitle').textContent = `Rolling ${days} days`;
+
+  try{
+    // Fetch ALL snapshots for all cars — we need full history to detect state transitions
+    const {data:snaps, error} = await supabase
+      .from('fleet_snapshots')
+      .select('car_id,report_date,section,loop,origin,destination,current_loc,waybill_date,dwell,empty_status,clm_code')
+      .order('report_date', {ascending:true});
+
+    if(error) throw error;
+    if(!snaps||!snaps.length){ content.innerHTML='<div class="ct-loading">No snapshot data found</div>'; return; }
+
+    // Cutoff: only count trips whose waybill_date falls within the rolling window
+    const cutoffDate = new Date(REPORT_DATE||new Date());
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const cutoffStr = cutoffDate.toISOString().slice(0,10);
+
+    // Group snapshots by car_id, already sorted by date
+    const byCar = {};
+    snaps.forEach(s=>{
+      if(!byCar[s.car_id]) byCar[s.car_id]=[];
+      byCar[s.car_id].push(s);
+    });
+
+    const trips = [];
+
+    Object.entries(byCar).forEach(([carId, dayArr])=>{
+      // Walk through snapshots as a state machine to find complete loops
+      // A loop: EMPTY@origin → LOADED (waybill) → EMPTY@dest → EMPTY@origin
+
+      let i = 0;
+      while(i < dayArr.length){
+        const snap = dayArr[i];
+
+        // Find start of a loaded trip: a LOADED snapshot with a waybill_date
+        if(snap.section !== 'LOADED' || !snap.waybill_date){
+          i++; continue;
+        }
+
+        // Skip if waybill_date is outside our rolling window
+        if(snap.waybill_date < cutoffStr){ i++; continue; }
+
+        const waybillDate = snap.waybill_date;
+        const origin = snap.loop;
+        const destination = snap.destination || '';
+
+        // ── 1. ORIGIN DWELL ──
+        // Scan BACKWARD from this snap to find consecutive EMPTY days at origin
+        let originDwell = null;
+        let j = i - 1;
+        let originDwellDays = 0;
+        let prevDate = waybillDate;
+        while(j >= 0){
+          const prev = dayArr[j];
+          if(prev.section !== 'EMPTY') break;
+          if(prev.loop !== origin && prev.loop !== null) break;
+          // Allow up to 3-day gap (weekends, missed uploads)
+          const gap = Math.round((new Date(prevDate) - new Date(prev.report_date)) / 86400000);
+          if(gap > 4) break;
+          originDwellDays++;
+          prevDate = prev.report_date;
+          j--;
+        }
+        // Also use the dwell value from first loaded snapshot as a cross-check
+        const dwellFallback = snap.dwell > 0 && snap.dwell < 60 ? Math.round(snap.dwell) : null;
+        if(originDwellDays > 0) originDwell = originDwellDays;
+        else if(dwellFallback) originDwell = dwellFallback;
+
+        // ── 2. LOADED TRANSIT ──
+        // Scan FORWARD through LOADED snapshots with same waybill_date
+        // Count days until section changes to EMPTY
+        let k = i;
+        let loadedDays = 0;
+        let firstEmptyIdx = -1;
+        while(k < dayArr.length){
+          const cur = dayArr[k];
+          if(cur.section === 'LOADED' && cur.waybill_date === waybillDate){
+            loadedDays++;
+          } else if(cur.section === 'EMPTY'){
+            firstEmptyIdx = k;
+            break;
+          } else if(cur.section === 'LOADED' && cur.waybill_date !== waybillDate){
+            // New trip started — no delivery detected
+            break;
+          }
+          k++;
+        }
+        const loadedTransit = loadedDays > 0 ? loadedDays : null;
+
+        // ── 3. DESTINATION DWELL ──
+        // EMPTY snapshots after delivery where loop !== origin (still at destination)
+        let destDwell = null;
+        let firstReturnIdx = -1;
+        if(firstEmptyIdx >= 0){
+          let destDays = 0;
+          let m = firstEmptyIdx;
+          while(m < dayArr.length){
+            const cur = dayArr[m];
+            if(cur.section !== 'EMPTY') break;
+            if(cur.loop === origin && (cur.empty_status === 'onsite' || cur.empty_status === 'waiting')){
+              firstReturnIdx = m;
+              break;
+            }
+            destDays++;
+            m++;
+          }
+          if(destDays > 0) destDwell = destDays;
+        }
+
+        // ── 4. EMPTY TRANSIT ──
+        // Days from leaving destination (EMPTY, not at origin) to arriving at origin
+        let emptyTransit = null;
+        if(firstEmptyIdx >= 0){
+          // Find first day heading back (not at destination, not yet at origin onsite)
+          let inboundStart = -1;
+          let n = firstEmptyIdx;
+          while(n < dayArr.length){
+            const cur = dayArr[n];
+            if(cur.section !== 'EMPTY') break;
+            if(cur.loop !== origin && cur.empty_status === 'inbound'){
+              inboundStart = n; break;
+            }
+            n++;
+          }
+          if(inboundStart >= 0 && firstReturnIdx > inboundStart){
+            emptyTransit = firstReturnIdx - inboundStart;
+          } else if(firstReturnIdx > firstEmptyIdx && destDwell !== null){
+            // Estimate: gap between delivery and return minus dest dwell
+            const totalEmpty = firstReturnIdx - firstEmptyIdx;
+            const estimated = totalEmpty - (destDwell||0);
+            if(estimated > 0) emptyTransit = estimated;
+          }
+        }
+
+        // Only add trip if we have at least origin dwell + loaded transit
+        if(loadedTransit !== null){
+          trips.push({
+            carId, origin, destination, waybillDate,
+            originDwell, loadedTransit, destDwell, emptyTransit,
+            complete: destDwell !== null
+          });
+        }
+
+        // Advance past this trip's loaded snapshots
+        i = k;
+      }
+    });
+
+    if(!trips.length){
+      content.innerHTML=`<div class="ct-loading">No trips with waybill dates found in the last ${days} days.<br>Try extending the range or ensure daily reports have been uploaded.</div>`;
+      return;
+    }
+
+    // Group by origin + destination lane
+    const lanes = {};
+    trips.forEach(t=>{
+      const destKey = (t.destination||'').split(',')[0].trim().toUpperCase()||'UNKNOWN';
+      const key = `${t.origin||'?'}|||${destKey}`;
+      if(!lanes[key]) lanes[key]={origin:t.origin, destination:t.destination, destKey, trips:[]};
+      lanes[key].trips.push(t);
+      // Pull customer from order board if loaded
+      const order = buildOrderLookup()[t.carId];
+      if(order&&order.receiver) lanes[key].customer = order.receiver;
+    });
+
+    // Averages — exclude nulls and zeros
+    const avg = arr => {
+      const valid = arr.filter(v=>v!==null&&v!==undefined&&v>0);
+      return valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
+    };
+
+    const laneRows = Object.values(lanes).map(lane=>{
+      const completed = lane.trips.filter(t=>t.complete);
+      return {
+        origin: lane.origin,
+        destination: lane.destination,
+        customer: lane.customer||'',
+        tripCount: lane.trips.length,
+        completedCount: completed.length,
+        avgOriginDwell:   avg(lane.trips.map(t=>t.originDwell)),
+        avgLoadedTransit: avg(lane.trips.map(t=>t.loadedTransit)),
+        avgDestDwell:     avg(completed.map(t=>t.destDwell)),
+        avgEmptyTransit:  avg(completed.map(t=>t.emptyTransit)),
+        get avgTotalCycle(){
+          return avg([this.avgOriginDwell, this.avgLoadedTransit, this.avgDestDwell, this.avgEmptyTransit].filter(v=>v));
+        }
+      };
+    }).filter(r=>r.tripCount>0).sort((a,b)=>b.tripCount-a.tripCount);
+
+    // Fleet-wide averages
+    const fleetAvg = arr => {
+      const valid = arr.filter(v=>v!==null&&v!==undefined&&v>0);
+      return valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
+    };
+    const fleetAvgOrigin  = fleetAvg(laneRows.map(r=>r.avgOriginDwell));
+    const fleetAvgLoaded  = fleetAvg(laneRows.map(r=>r.avgLoadedTransit));
+    const fleetAvgDest    = fleetAvg(laneRows.map(r=>r.avgDestDwell));
+    const fleetAvgEmpty   = fleetAvg(laneRows.map(r=>r.avgEmptyTransit));
+
+    document.getElementById('tb5').textContent = laneRows.length;
+
+    const fmt = v => (v===null||v===undefined||v<=0) ? '—' : v.toFixed(1)+'d';
+    const valCls = (v,warn,hot) => (!v||v<=0)?'na':v>=hot?'hot':v>=warn?'warn':'ok';
+
+    let html = `
+    <div class="ct-summary">
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgOrigin)}</div><div class="ct-card-l">Avg Origin Dwell</div><div class="ct-card-s">all lanes</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgLoaded)}</div><div class="ct-card-l">Avg Loaded Transit</div><div class="ct-card-s">all lanes</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgDest)}</div><div class="ct-card-l">Avg Dest. Dwell</div><div class="ct-card-s">completed loops</div></div>
+      <div class="ct-card"><div class="ct-card-n">${fmt(fleetAvgEmpty)}</div><div class="ct-card-l">Avg Empty Transit</div><div class="ct-card-s">completed loops</div></div>
+    </div>
+    <div class="ct-table-wrap">
+    <table class="ct-table" id="ct-tbl">
+      <thead><tr>
+        <th onclick="sortCT('origin')">Origin</th>
+        <th onclick="sortCT('destination')">Destination / Customer</th>
+        <th class="num" onclick="sortCT('tripCount')"># Trips</th>
+        <th class="num" onclick="sortCT('avgOriginDwell')">Origin Dwell</th>
+        <th class="num" onclick="sortCT('avgLoadedTransit')">Loaded Transit</th>
+        <th class="num" onclick="sortCT('avgDestDwell')">Dest. Dwell</th>
+        <th class="num" onclick="sortCT('avgEmptyTransit')">Empty Transit</th>
+        <th class="num" onclick="sortCT('avgTotalCycle')">Total Cycle</th>
+        <th>Breakdown</th>
+      </tr></thead>
+      <tbody id="ct-tbody">
+      ${laneRows.map(r=>{
+        const total=(r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
+        const pct=v=>total>0?Math.round(((v||0)/total)*100):0;
+        const totalCycle=(r.avgOriginDwell||0)+(r.avgLoadedTransit||0)+(r.avgDestDwell||0)+(r.avgEmptyTransit||0);
+        return `<tr>
+          <td><div class="ct-origin">${SITE_LBL[r.origin]||r.origin||'—'}</div></td>
+          <td><div class="ct-origin" style="font-size:11px;">${r.destination}</div>${r.customer?`<div class="ct-customer">${r.customer}</div>`:''}</td>
+          <td><div class="ct-val ok" style="text-align:right;">${r.tripCount}${r.completedCount<r.tripCount?` <span style="color:var(--muted);font-size:9px;">(${r.completedCount} done)</span>`:''}</div></td>
+          <td><div class="ct-val ${valCls(r.avgOriginDwell,5,10)}">${fmt(r.avgOriginDwell)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgLoadedTransit,7,14)}">${fmt(r.avgLoadedTransit)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgDestDwell,5,14)}">${fmt(r.avgDestDwell)}</div></td>
+          <td><div class="ct-val ${valCls(r.avgEmptyTransit,7,14)}">${fmt(r.avgEmptyTransit)}</div></td>
+          <td><div class="ct-total ${valCls(totalCycle,21,35)}">${totalCycle>0?totalCycle.toFixed(1)+'d':'—'}</div></td>
+          <td><div class="ct-bar-wrap">
+            <div class="ct-bar-seg origin-dwell" style="width:${pct(r.avgOriginDwell)}%"></div>
+            <div class="ct-bar-seg loaded-transit" style="width:${pct(r.avgLoadedTransit)}%"></div>
+            <div class="ct-bar-seg dest-dwell" style="width:${pct(r.avgDestDwell)}%"></div>
+            <div class="ct-bar-seg empty-transit" style="width:${pct(r.avgEmptyTransit)}%"></div>
+          </div></td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div class="ct-note">
+      <strong>How cycle times are calculated</strong> from daily snapshot history:
+      <strong>Origin Dwell</strong> = consecutive EMPTY days at origin before loading.
+      <strong>Loaded Transit</strong> = days car appears as LOADED in daily reports (waybill date to delivery).
+      <strong>Dest. Dwell</strong> = EMPTY days at destination before heading back.
+      <strong>Empty Transit</strong> = EMPTY+inbound days returning to origin.
+      Completed loops (all 4 components available) show full cycle. Partial rows show data available so far.
+      <strong>${trips.length} trips</strong> detected across <strong>${laneRows.length} lanes</strong> in the last ${days} days.
+    </div>`;
+
+    content.innerHTML = html;
+    CT_LANE_ROWS = laneRows;
+    CT_SORT_COL = 'tripCount';
+    CT_SORT_DIR = 'desc';
+
+  }catch(e){
+    content.innerHTML=`<div class="ct-loading" style="color:var(--red);">Error: ${e.message}</div>`;
+    console.error('Cycle time error:', e);
+  }
+}
+  days = days || CT_DAYS;
+  CT_DAYS = days;
+  CT_LOADED = true;
+  const content = document.getElementById('ct-content');
   content.innerHTML = '<div class="ct-loading"><span class="spin"></span> Loading snapshot history…</div>';
   document.getElementById('ct-subtitle').textContent = `Rolling ${days} days`;
 
