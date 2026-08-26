@@ -2100,14 +2100,23 @@ function renderSupplyForecast(weeksOut){
   // Week 0 = current week (may be partial)
   function getSunday(d){
     const dt = new Date(d);
-    dt.setDate(dt.getDate() - dt.getDay()); // back to Sunday
     dt.setHours(0,0,0,0);
+    const day = dt.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+    dt.setDate(dt.getDate() - day); // subtract days since Sunday
     return dt;
   }
   function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
   function isoDate(d){ return d.toISOString().slice(0,10); }
   function fmtDate(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
   function fmtDay(d){ return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+
+  // Debug: log what return dates we're computing
+  console.log('Today:', isoDate(today));
+  console.log('Week start (Sunday):', isoDate(getSunday(today)));
+  ALL_CARS.slice(0,5).forEach(c=>{
+    if(c.section==='LOADED'&&c.etaDt) console.log(c.id,'ETA:',isoDate(c.etaDt),'Return:',isoDate(addDays(c.etaDt,19)));
+    if(c.section==='EMPTY'&&c.emptyStatus==='inbound'&&c.etaDt) console.log(c.id,'Empty ETA:',isoDate(c.etaDt));
+  });
 
   const weekStart = getSunday(today);
   const weeks = [];
@@ -2162,16 +2171,16 @@ function renderSupplyForecast(weeksOut){
     if(w) w.cars.push(rc);
   });
 
-  // Count available now per site
+  const SF_SITES = SITES.filter(s=>!s.includes('SUNNYSIDE'));
   const availableNow = {};
-  SITES.forEach(s=>availableNow[s]=[]);
+  SF_SITES.forEach(s=>availableNow[s]=[]);
   returnCars.filter(rc=>rc.type==='available').forEach(rc=>{
     if(availableNow[rc.loop]) availableNow[rc.loop].push(rc);
   });
 
   // Count unknown ETAs per site
   const unknownEta = {};
-  SITES.forEach(s=>unknownEta[s]=[]);
+  SF_SITES.forEach(s=>unknownEta[s]=[]);
   returnCars.filter(rc=>!rc.returnDate&&rc.type!=='available').forEach(rc=>{
     if(unknownEta[rc.loop]) unknownEta[rc.loop].push(rc);
   });
@@ -2181,7 +2190,7 @@ function renderSupplyForecast(weeksOut){
 
   let html = '';
 
-  SITES.forEach(site=>{
+  SF_SITES.forEach(site=>{
     const siteAvail = availableNow[site]||[];
     const siteUnknown = unknownEta[site]||[];
 
