@@ -446,35 +446,39 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 .sf-site-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--accent);}
 .sf-site-name{font-size:14px;font-weight:600;color:var(--text);}
 .sf-avail-now{font-size:11px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:4px;padding:3px 9px;font-weight:600;}
-
-/* week cards */
-.sf-weeks{display:flex;gap:10px;flex-wrap:wrap;}
-.sf-week{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;min-width:160px;flex:1;}
-.sf-week.past{opacity:.5;}
-.sf-week-hdr{padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;transition:.12s;}
-.sf-week-hdr:hover{background:var(--bg4);}
-.sf-week-label{font-size:11px;font-weight:600;color:var(--text);}
-.sf-week-range{font-size:9px;color:var(--muted);margin-top:1px;}
-.sf-week-count{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:var(--blue);margin-top:4px;}
-.sf-week-count.has-alert{color:var(--yellow);}
-.sf-week-sub{font-size:9px;color:var(--muted);}
-
-/* day drill-down */
-.sf-days{display:none;border-top:1px solid var(--border);}
-.sf-days.open{display:block;}
-.sf-day-row{padding:5px 12px;border-top:1px solid rgba(48,54,61,.4);font-size:11px;}
-.sf-day-label{font-size:10px;font-weight:600;color:var(--muted);margin-bottom:3px;}
-.sf-car-row{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;}
-.sf-car-id{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text);width:100px;flex-shrink:0;}
-.sf-car-type{font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid;flex-shrink:0;}
-.sf-car-type.empty{background:var(--blue-bg);border-color:var(--blue-bd);color:var(--blue);}
-.sf-car-type.loaded{background:var(--green-bg);border-color:var(--green-bd);color:var(--green);}
-.sf-car-type.alert{background:var(--yellow-bg);border-color:var(--yellow-bd);color:var(--yellow);}
-.sf-car-dest{font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-/* available now row */
-.sf-now-cars{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.sf-now-cars{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
 .sf-now-chip{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);}
+
+/* forecast table */
+.sf-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;}
+.sf-table th{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:7px 12px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap;background:var(--bg2);}
+.sf-table th.num{text-align:center;}
+.sf-table td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:top;}
+.sf-table tr:last-child td{border-bottom:none;}
+.sf-table tr.week-row{cursor:pointer;}
+.sf-table tr.week-row:hover td{background:rgba(0,0,0,.02);}
+.sf-table tr.week-row.has-alert td{background:rgba(210,153,34,.04);}
+.sf-week-label-cell{font-weight:600;font-size:12px;color:var(--text);white-space:nowrap;}
+.sf-week-range-cell{font-size:10px;color:var(--muted);}
+.sf-count{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;color:var(--blue);text-align:center;}
+.sf-count.zero{color:var(--dim);}
+.sf-count.has-alert{color:var(--yellow);}
+.sf-expand-icon{font-size:10px;color:var(--muted);text-align:right;}
+
+/* drill-down row */
+.sf-detail-row{display:none;}
+.sf-detail-row.open{display:table-row;}
+.sf-detail-inner{padding:6px 12px 10px 24px;background:var(--bg3);}
+.sf-detail-day{font-size:10px;font-weight:600;color:var(--muted);margin:6px 0 3px;text-transform:uppercase;letter-spacing:.05em;}
+.sf-car-line{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;border-bottom:1px solid rgba(48,54,61,.3);}
+.sf-car-line:last-child{border-bottom:none;}
+.sf-car-id{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text);width:105px;flex-shrink:0;}
+.sf-car-badge{font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid;flex-shrink:0;white-space:nowrap;}
+.sf-car-badge.empty{background:var(--blue-bg);border-color:var(--blue-bd);color:var(--blue);}
+.sf-car-badge.loaded{background:var(--green-bg);border-color:var(--green-bd);color:var(--green);}
+.sf-car-badge.alert{background:var(--yellow-bg);border-color:var(--yellow-bd);color:var(--yellow);}
+.sf-car-dest{font-size:10px;color:var(--muted);flex:1;}
+.sf-alert-tag{font-size:9px;color:var(--yellow);flex-shrink:0;}
 
 /* ── CYCLE TIME TAB ── */
 .ct-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
@@ -2211,8 +2215,8 @@ function renderSupplyForecast(weeksOut){
   let html = '';
 
   SF_SITES.forEach(site=>{
-    const siteAvail = availableNow[site]||[];
-    const siteUnknown = unknownEta[site]||[];
+    const siteAvail  = availableNow[site]||[];
+    const siteUnknown= unknownEta[site]||[];
 
     html += `<div class="sf-site-block">
       <div class="sf-site-header">
@@ -2221,19 +2225,23 @@ function renderSupplyForecast(weeksOut){
         ${siteUnknown.length?`<span style="font-size:10px;color:var(--muted);">${siteUnknown.length} with unknown ETA</span>`:''}
       </div>`;
 
-    // Available now chips
     if(siteAvail.length){
       html+=`<div class="sf-now-cars">${siteAvail.map(rc=>`<div class="sf-now-chip">${rc.carId}</div>`).join('')}</div>`;
     }
 
-    html += `<div class="sf-weeks" style="margin-top:10px;">`;
+    html += `<table class="sf-table"><thead><tr>
+      <th>Week</th><th>Date Range</th>
+      <th class="num">Cars Due Back</th>
+      <th>Details</th>
+    </tr></thead><tbody>`;
 
     weeks.forEach((wk,wi)=>{
       const siteCars = wk.cars.filter(rc=>rc.loop===site);
       const hasAlert = siteCars.some(rc=>rc.needsUnload);
-      const isPast = wk.satStr < todayStr;
+      const isPast   = wk.satStr < todayStr;
+      const rowId    = `sfr-${site.replace(/[^a-z]/gi,'')}-${wi}`;
 
-      // Group by day for drill-down
+      // Group by day
       const byDay = {};
       siteCars.forEach(rc=>{
         if(!byDay[rc.returnDate]) byDay[rc.returnDate]=[];
@@ -2241,75 +2249,86 @@ function renderSupplyForecast(weeksOut){
       });
       const dayKeys = Object.keys(byDay).sort();
 
-      const weekId = `sf-${site.replace(/[^a-z]/gi,'')}-w${wi}`;
+      const weekLbl = wi===0 ? 'This Week' : `Week of ${fmtDate(wk.sun)}`;
+      const countCls = siteCars.length===0?'zero':hasAlert?'has-alert':'';
+      const detailBtn = siteCars.length ? `<span style="font-size:10px;color:var(--blue);cursor:pointer;" onclick="toggleSFRow('${rowId}')">▶ Show cars</span>` : `<span style="font-size:10px;color:var(--dim);">—</span>`;
 
-      html += `<div class="sf-week${isPast?' past':''}">
-        <div class="sf-week-hdr" onclick="toggleSFWeek('${weekId}')">
-          <div class="sf-week-label">${wi===0?'This Week':`Week of ${fmtDate(wk.sun)}`}</div>
-          <div class="sf-week-range">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div>
-          <div class="sf-week-count${hasAlert?' has-alert':''}">${siteCars.length}</div>
-          <div class="sf-week-sub">car${siteCars.length!==1?'s':''} due back${hasAlert?' ⚠':''}${siteCars.length?'  ▾':''}</div>
-        </div>`;
+      html += `<tr class="week-row${hasAlert?' has-alert':''}" style="${isPast?'opacity:.45;':''}"
+        onclick="if(${siteCars.length}) toggleSFRow('${rowId}')">
+        <td><div class="sf-week-label-cell">${weekLbl}</div></td>
+        <td><div class="sf-week-range-cell">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div></td>
+        <td><div class="sf-count ${countCls}">${siteCars.length}${hasAlert?' ⚠':''}</div></td>
+        <td>${detailBtn}</td>
+      </tr>`;
 
+      // Detail row (hidden until toggled)
       if(siteCars.length){
-        html += `<div class="sf-days" id="${weekId}">`;
+        let detailHtml = '';
         dayKeys.forEach(day=>{
           const dayCars = byDay[day];
           const dayDt = new Date(day+'T12:00:00');
-          html += `<div class="sf-day-row">
-            <div class="sf-day-label">${fmtDay(dayDt)}</div>`;
+          detailHtml += `<div class="sf-detail-day">${fmtDay(dayDt)}</div>`;
           dayCars.forEach(rc=>{
-            const typeLbl = rc.type==='empty'?'Empty Return':rc.type==='loaded'?'Loaded → Return (ETA+19)':rc.type==='constructive'?'Constructive → Return (ETA+19)':'Return';
-            const typeCls = rc.needsUnload?'alert':rc.type==='empty'?'empty':'loaded';
-            html += `<div class="sf-car-row">
+            const badgeCls = rc.needsUnload?'alert':rc.type==='empty'?'empty':'loaded';
+            const badgeLbl = rc.type==='empty'?'Empty Return':rc.needsUnload?'Needs Unloading':'Loaded → Return';
+            detailHtml += `<div class="sf-car-line">
               <div class="sf-car-id">${rc.carId}</div>
-              <div class="sf-car-type ${typeCls}">${typeLbl}</div>
-              ${rc.needsUnload?`<div style="font-size:9px;color:var(--yellow);margin-left:4px;">⚠ Needs unloading</div>`:''}
+              <span class="sf-car-badge ${badgeCls}">${badgeLbl}</span>
               <div class="sf-car-dest">${rc.destination}</div>
+              ${rc.needsUnload?`<div class="sf-alert-tag">⚠ ETA+20d est.</div>`:`<div class="sf-alert-tag" style="color:var(--muted);">ETA: ${rc.etaStr}</div>`}
             </div>`;
           });
-          html += `</div>`;
         });
-        html += `</div>`;
-      }
 
-      html += `</div>`; // sf-week
+        html += `<tr class="sf-detail-row" id="${rowId}">
+          <td colspan="4" style="padding:0;">
+            <div class="sf-detail-inner">${detailHtml}</div>
+          </td>
+        </tr>`;
+      }
     });
 
-    // Unknown ETAs for this site
+    // Unknown ETAs
     if(siteUnknown.length){
-      html += `<div class="sf-week" style="border-color:var(--dim);opacity:.7;">
-        <div class="sf-week-hdr" onclick="toggleSFWeek('sf-unk-${site.replace(/[^a-z]/gi,'')}')">
-          <div class="sf-week-label" style="color:var(--muted);">Unknown Return Date</div>
-          <div class="sf-week-count" style="color:var(--muted);">${siteUnknown.length}</div>
-          <div class="sf-week-sub">no ETA available  ▾</div>
-        </div>
-        <div class="sf-days" id="sf-unk-${site.replace(/[^a-z]/gi,'')}">
-          <div class="sf-day-row">
-            ${siteUnknown.map(rc=>`<div class="sf-car-row">
-              <div class="sf-car-id">${rc.carId}</div>
-              <div class="sf-car-type ${rc.needsUnload?'alert':'empty'}">${rc.type}</div>
-              <div class="sf-car-dest">${rc.etaStr} · ${rc.destination}</div>
-            </div>`).join('')}
-          </div>
-        </div>
-      </div>`;
+      const rowId = `sfr-unk-${site.replace(/[^a-z]/gi,'')}`;
+      html += `<tr class="week-row" style="opacity:.6;" onclick="toggleSFRow('${rowId}')">
+        <td><div class="sf-week-label-cell" style="color:var(--muted);">Unknown Return</div></td>
+        <td><div class="sf-week-range-cell">No ETA available</div></td>
+        <td><div class="sf-count" style="color:var(--dim);">${siteUnknown.length}</div></td>
+        <td><span style="font-size:10px;color:var(--muted);cursor:pointer;">▶ Show cars</span></td>
+      </tr>
+      <tr class="sf-detail-row" id="${rowId}">
+        <td colspan="4" style="padding:0;"><div class="sf-detail-inner">
+          ${siteUnknown.map(rc=>`<div class="sf-car-line">
+            <div class="sf-car-id">${rc.carId}</div>
+            <span class="sf-car-badge" style="background:var(--bg3);border-color:var(--border);color:var(--muted);">Unknown</span>
+            <div class="sf-car-dest">${rc.etaStr||'No ETA'} · ${rc.destination}</div>
+          </div>`).join('')}
+        </div></td>
+      </tr>`;
     }
 
-    html += `</div></div>`; // sf-weeks + sf-site-block
+    html += `</tbody></table></div>`;
   });
 
   content.innerHTML = html;
 }
 
-function toggleSFWeek(id){
+function toggleSFRow(id){
   const el = document.getElementById(id);
-  if(el) el.classList.toggle('open');
+  if(!el) return;
+  const isOpen = el.classList.contains('open');
+  const prevRow = el.previousElementSibling;
+  if(prevRow){
+    const btn = prevRow.querySelector('span[onclick]');
+    if(btn) btn.textContent = isOpen ? '▶ Show cars' : '▼ Hide cars';
+  }
+  el.classList.toggle('open');
 }
 
 window._fleetInit = init;
 window.renderSupplyForecast = renderSupplyForecast;
-window.toggleSFWeek = toggleSFWeek;
+window.toggleSFRow = toggleSFRow;
 window.switchTab = switchTab;
 window.setRange = setRange;
 window.renderShipHistory = renderShipHistory;
