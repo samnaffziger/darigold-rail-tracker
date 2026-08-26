@@ -2113,10 +2113,19 @@ function renderSupplyForecast(weeksOut){
   // Debug: log what return dates we're computing
   console.log('Today:', isoDate(today));
   console.log('Week start (Sunday):', isoDate(getSunday(today)));
-  ALL_CARS.slice(0,5).forEach(c=>{
-    if(c.section==='LOADED'&&c.etaDt) console.log(c.id,'ETA:',isoDate(c.etaDt),'Return:',isoDate(addDays(c.etaDt,19)));
-    if(c.section==='EMPTY'&&c.emptyStatus==='inbound'&&c.etaDt) console.log(c.id,'Empty ETA:',isoDate(c.etaDt));
-  });
+
+  // Helper: get a usable ETA date from a car — etaDt may be null if eta_date wasn't stored
+  // Fall back to parsing eta_str directly
+  function getEtaDt(car){
+    if(car.etaDt) return car.etaDt;
+    if(!car.etaStr) return null;
+    const s = String(car.etaStr).trim();
+    if(!s||s.toLowerCase().includes('constructive')||s.toLowerCase().includes('actual')||
+       s.toLowerCase().includes('delayed')||s.toLowerCase().includes('held')) return null;
+    const d = new Date(s);
+    if(!isNaN(d)&&d.getFullYear()>=2024&&d.getFullYear()<=2030) return d;
+    return null;
+  }
 
   const weekStart = getSunday(today);
   const weeks = [];
@@ -2138,6 +2147,8 @@ function renderSupplyForecast(weeksOut){
     if(!car.loop || car.loop==='SHOP') return;
     if(car.section==='SHOP') return;
 
+    const etaDt = getEtaDt(car);
+
     const isConstructive = car.etaStr && (
       car.etaStr.toLowerCase().includes('constructive') ||
       car.etaStr.toLowerCase().includes('actual')
@@ -2145,20 +2156,19 @@ function renderSupplyForecast(weeksOut){
 
     if(car.section==='EMPTY'){
       if(car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held'){
-        // Already at origin — available now
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'available', destination:car.currentLoc, needsUnload:false, etaStr:'On site' });
-      } else if(car.emptyStatus==='inbound' && car.etaDt){
-        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(car.etaDt), type:'empty', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr });
-      } else if(car.emptyStatus==='inbound' && !car.etaDt){
-        // No ETA — unknown
+      } else if(car.emptyStatus==='inbound' && etaDt){
+        console.log(car.id,'Empty inbound ETA:',isoDate(etaDt));
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(etaDt), type:'empty', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr });
+      } else if(car.emptyStatus==='inbound' && !etaDt){
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr||'Unknown' });
       }
     } else if(car.section==='LOADED'){
-      if(car.etaDt){
-        const returnDt = addDays(car.etaDt, 19);
+      if(etaDt){
+        const returnDt = addDays(etaDt, 19);
+        console.log(car.id,'Loaded ETA:',isoDate(etaDt),'Return:',isoDate(returnDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:isConstructive?'constructive':'loaded', destination:car.destination, needsUnload:isConstructive, etaStr:car.etaStr });
       } else if(isConstructive){
-        // Constructive but no parsed ETA date — flag as unknown return
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'constructive', destination:car.destination, needsUnload:true, etaStr:car.etaStr||'Constructive' });
       }
     }
