@@ -351,6 +351,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
         <div class="tab" data-tab="t3" onclick="switchTab('t3')">Loaded Cars <span class="tbadge" id="tb3">—</span></div>
         <div class="tab" data-tab="t4" onclick="switchTab('t4')">Order Board <span class="tbadge" id="tb4">—</span></div>
         <div class="tab" data-tab="t5" onclick="switchTab('t5');loadCycleTime()">Cycle Times <span class="tbadge" id="tb5">—</span></div>
+        <div class="tab" data-tab="t6" onclick="switchTab('t6');renderSupplyForecast()">Supply Forecast <span class="tbadge" id="tb6">—</span></div>
       </div>
       <div class="panel active" id="t1">
         <div id="changes-strip" style="display:none;"></div>
@@ -420,12 +421,61 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
         </div>
         <div id="ct-content"><div class="ct-loading">Click a time range above to load cycle time data</div></div>
       </div>
+      <div class="panel" id="t6">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-size:14px;font-weight:600;color:var(--text);">Railcar Supply Forecast</span>
+            <span style="font-size:11px;color:var(--muted);" id="sf-subtitle">Cars due back by site, by week</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn" onclick="renderSupplyForecast(6)">6 Weeks</button>
+            <button class="btn" onclick="renderSupplyForecast(10)">10 Weeks</button>
+            <button class="btn" onclick="renderSupplyForecast(16)">16 Weeks</button>
+          </div>
+        </div>
+        <div id="sf-content"><div class="ct-loading">Loading supply forecast…</div></div>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- t5 cycle time panel injected separately since it's outside app div structure -->
 <style>
+/* ── SUPPLY FORECAST TAB ── */
+.sf-site-block{margin-bottom:28px;}
+.sf-site-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--accent);}
+.sf-site-name{font-size:14px;font-weight:600;color:var(--text);}
+.sf-avail-now{font-size:11px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:4px;padding:3px 9px;font-weight:600;}
+
+/* week cards */
+.sf-weeks{display:flex;gap:10px;flex-wrap:wrap;}
+.sf-week{background:var(--bg2);border:1px solid var(--border);border-radius:7px;overflow:hidden;min-width:160px;flex:1;}
+.sf-week.past{opacity:.5;}
+.sf-week-hdr{padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;transition:.12s;}
+.sf-week-hdr:hover{background:var(--bg4);}
+.sf-week-label{font-size:11px;font-weight:600;color:var(--text);}
+.sf-week-range{font-size:9px;color:var(--muted);margin-top:1px;}
+.sf-week-count{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:var(--blue);margin-top:4px;}
+.sf-week-count.has-alert{color:var(--yellow);}
+.sf-week-sub{font-size:9px;color:var(--muted);}
+
+/* day drill-down */
+.sf-days{display:none;border-top:1px solid var(--border);}
+.sf-days.open{display:block;}
+.sf-day-row{padding:5px 12px;border-top:1px solid rgba(48,54,61,.4);font-size:11px;}
+.sf-day-label{font-size:10px;font-weight:600;color:var(--muted);margin-bottom:3px;}
+.sf-car-row{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;}
+.sf-car-id{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text);width:100px;flex-shrink:0;}
+.sf-car-type{font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid;flex-shrink:0;}
+.sf-car-type.empty{background:var(--blue-bg);border-color:var(--blue-bd);color:var(--blue);}
+.sf-car-type.loaded{background:var(--green-bg);border-color:var(--green-bd);color:var(--green);}
+.sf-car-type.alert{background:var(--yellow-bg);border-color:var(--yellow-bd);color:var(--yellow);}
+.sf-car-dest{font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* available now row */
+.sf-now-cars{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.sf-now-chip{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);}
+
 /* ── CYCLE TIME TAB ── */
 .ct-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
 .ct-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -2037,7 +2087,200 @@ function showCTDrilldown(laneIdx){
   modal.onclick=e=>{if(e.target===modal)modal.style.display='none';};
 }
 
+// ── SUPPLY FORECAST TAB ──
+function renderSupplyForecast(weeksOut){
+  weeksOut = weeksOut || 8;
+  const content = document.getElementById('sf-content');
+  if(!ALL_CARS.length){ content.innerHTML='<div class="ct-loading">Load a daily report first</div>'; return; }
+
+  const today = REPORT_DATE || new Date();
+  const todayStr = today.toISOString().slice(0,10);
+
+  // Build week buckets: Sunday → Saturday for weeksOut weeks
+  // Week 0 = current week (may be partial)
+  function getSunday(d){
+    const dt = new Date(d);
+    dt.setDate(dt.getDate() - dt.getDay()); // back to Sunday
+    dt.setHours(0,0,0,0);
+    return dt;
+  }
+  function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function isoDate(d){ return d.toISOString().slice(0,10); }
+  function fmtDate(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+  function fmtDay(d){ return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+
+  const weekStart = getSunday(today);
+  const weeks = [];
+  for(let w=0;w<weeksOut;w++){
+    const sun = addDays(weekStart, w*7);
+    const sat = addDays(sun, 6);
+    weeks.push({ sun, sat, sunStr:isoDate(sun), satStr:isoDate(sat), label:`Week ${w===0?'(Current)':w}`, cars:[] });
+  }
+
+  // For each car, calculate estimated return date to origin
+  // Cars on-site/waiting/held = available now (already there)
+  // Inbound empties = use eta_date
+  // Loaded cars = eta_date + 19 days (time to unload and return)
+  // Constructive loaded = eta_date + 19 days (flagged as needs unloading)
+
+  const returnCars = []; // { carId, loop, returnDate, type, destination, needsUnload, etaStr }
+
+  ALL_CARS.forEach(car=>{
+    if(!car.loop || car.loop==='SHOP') return;
+    if(car.section==='SHOP') return;
+
+    const isConstructive = car.etaStr && (
+      car.etaStr.toLowerCase().includes('constructive') ||
+      car.etaStr.toLowerCase().includes('actual')
+    );
+
+    if(car.section==='EMPTY'){
+      if(car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held'){
+        // Already at origin — available now
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'available', destination:car.currentLoc, needsUnload:false, etaStr:'On site' });
+      } else if(car.emptyStatus==='inbound' && car.etaDt){
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(car.etaDt), type:'empty', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr });
+      } else if(car.emptyStatus==='inbound' && !car.etaDt){
+        // No ETA — unknown
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr||'Unknown' });
+      }
+    } else if(car.section==='LOADED'){
+      if(car.etaDt){
+        const returnDt = addDays(car.etaDt, 19);
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:isConstructive?'constructive':'loaded', destination:car.destination, needsUnload:isConstructive, etaStr:car.etaStr });
+      } else if(isConstructive){
+        // Constructive but no parsed ETA date — flag as unknown return
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'constructive', destination:car.destination, needsUnload:true, etaStr:car.etaStr||'Constructive' });
+      }
+    }
+  });
+
+  // Assign cars to week buckets
+  returnCars.forEach(rc=>{
+    if(!rc.returnDate) return;
+    const w = weeks.find(wk=>rc.returnDate>=wk.sunStr&&rc.returnDate<=wk.satStr);
+    if(w) w.cars.push(rc);
+  });
+
+  // Count available now per site
+  const availableNow = {};
+  SITES.forEach(s=>availableNow[s]=[]);
+  returnCars.filter(rc=>rc.type==='available').forEach(rc=>{
+    if(availableNow[rc.loop]) availableNow[rc.loop].push(rc);
+  });
+
+  // Count unknown ETAs per site
+  const unknownEta = {};
+  SITES.forEach(s=>unknownEta[s]=[]);
+  returnCars.filter(rc=>!rc.returnDate&&rc.type!=='available').forEach(rc=>{
+    if(unknownEta[rc.loop]) unknownEta[rc.loop].push(rc);
+  });
+
+  document.getElementById('sf-subtitle').textContent = `${weeksOut}-week forward look · Based on ${todayStr} report`;
+  document.getElementById('tb6').textContent = returnCars.filter(rc=>rc.returnDate).length;
+
+  let html = '';
+
+  SITES.forEach(site=>{
+    const siteAvail = availableNow[site]||[];
+    const siteUnknown = unknownEta[site]||[];
+
+    html += `<div class="sf-site-block">
+      <div class="sf-site-header">
+        <span class="sf-site-name">${SITE_LBL[site]}</span>
+        <span class="sf-avail-now">${siteAvail.length} available now</span>
+        ${siteUnknown.length?`<span style="font-size:10px;color:var(--muted);">${siteUnknown.length} with unknown ETA</span>`:''}
+      </div>`;
+
+    // Available now chips
+    if(siteAvail.length){
+      html+=`<div class="sf-now-cars">${siteAvail.map(rc=>`<div class="sf-now-chip">${rc.carId}</div>`).join('')}</div>`;
+    }
+
+    html += `<div class="sf-weeks" style="margin-top:10px;">`;
+
+    weeks.forEach((wk,wi)=>{
+      const siteCars = wk.cars.filter(rc=>rc.loop===site);
+      const hasAlert = siteCars.some(rc=>rc.needsUnload);
+      const isPast = wk.satStr < todayStr;
+
+      // Group by day for drill-down
+      const byDay = {};
+      siteCars.forEach(rc=>{
+        if(!byDay[rc.returnDate]) byDay[rc.returnDate]=[];
+        byDay[rc.returnDate].push(rc);
+      });
+      const dayKeys = Object.keys(byDay).sort();
+
+      const weekId = `sf-${site.replace(/[^a-z]/gi,'')}-w${wi}`;
+
+      html += `<div class="sf-week${isPast?' past':''}">
+        <div class="sf-week-hdr" onclick="toggleSFWeek('${weekId}')">
+          <div class="sf-week-label">${wi===0?'This Week':`Week of ${fmtDate(wk.sun)}`}</div>
+          <div class="sf-week-range">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div>
+          <div class="sf-week-count${hasAlert?' has-alert':''}">${siteCars.length}</div>
+          <div class="sf-week-sub">car${siteCars.length!==1?'s':''} due back${hasAlert?' ⚠':''}${siteCars.length?'  ▾':''}</div>
+        </div>`;
+
+      if(siteCars.length){
+        html += `<div class="sf-days" id="${weekId}">`;
+        dayKeys.forEach(day=>{
+          const dayCars = byDay[day];
+          const dayDt = new Date(day+'T12:00:00');
+          html += `<div class="sf-day-row">
+            <div class="sf-day-label">${fmtDay(dayDt)}</div>`;
+          dayCars.forEach(rc=>{
+            const typeLbl = rc.type==='empty'?'Empty Return':rc.type==='loaded'?'Loaded → Return (ETA+19)':rc.type==='constructive'?'Constructive → Return (ETA+19)':'Return';
+            const typeCls = rc.needsUnload?'alert':rc.type==='empty'?'empty':'loaded';
+            html += `<div class="sf-car-row">
+              <div class="sf-car-id">${rc.carId}</div>
+              <div class="sf-car-type ${typeCls}">${typeLbl}</div>
+              ${rc.needsUnload?`<div style="font-size:9px;color:var(--yellow);margin-left:4px;">⚠ Needs unloading</div>`:''}
+              <div class="sf-car-dest">${rc.destination}</div>
+            </div>`;
+          });
+          html += `</div>`;
+        });
+        html += `</div>`;
+      }
+
+      html += `</div>`; // sf-week
+    });
+
+    // Unknown ETAs for this site
+    if(siteUnknown.length){
+      html += `<div class="sf-week" style="border-color:var(--dim);opacity:.7;">
+        <div class="sf-week-hdr" onclick="toggleSFWeek('sf-unk-${site.replace(/[^a-z]/gi,'')}')">
+          <div class="sf-week-label" style="color:var(--muted);">Unknown Return Date</div>
+          <div class="sf-week-count" style="color:var(--muted);">${siteUnknown.length}</div>
+          <div class="sf-week-sub">no ETA available  ▾</div>
+        </div>
+        <div class="sf-days" id="sf-unk-${site.replace(/[^a-z]/gi,'')}">
+          <div class="sf-day-row">
+            ${siteUnknown.map(rc=>`<div class="sf-car-row">
+              <div class="sf-car-id">${rc.carId}</div>
+              <div class="sf-car-type ${rc.needsUnload?'alert':'empty'}">${rc.type}</div>
+              <div class="sf-car-dest">${rc.etaStr} · ${rc.destination}</div>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    html += `</div></div>`; // sf-weeks + sf-site-block
+  });
+
+  content.innerHTML = html;
+}
+
+function toggleSFWeek(id){
+  const el = document.getElementById(id);
+  if(el) el.classList.toggle('open');
+}
+
 window._fleetInit = init;
+window.renderSupplyForecast = renderSupplyForecast;
+window.toggleSFWeek = toggleSFWeek;
 window.switchTab = switchTab;
 window.setRange = setRange;
 window.renderShipHistory = renderShipHistory;
