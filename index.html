@@ -2164,12 +2164,22 @@ function renderSupplyForecast(weeksOut){
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr||'Unknown' });
       }
     } else if(car.section==='LOADED'){
-      if(etaDt){
+      if(etaDt && !isConstructive){
         const returnDt = addDays(etaDt, 19);
         console.log(car.id,'Loaded ETA:',isoDate(etaDt),'Return:',isoDate(returnDt));
-        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:isConstructive?'constructive':'loaded', destination:car.destination, needsUnload:isConstructive, etaStr:car.etaStr });
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'loaded', destination:car.destination, needsUnload:false, etaStr:car.etaStr });
       } else if(isConstructive){
-        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'constructive', destination:car.destination, needsUnload:true, etaStr:car.etaStr||'Constructive' });
+        // Constructive placement — already at destination, estimate today + 20 days to return
+        const returnDt = addDays(today, 20);
+        console.log(car.id,'Constructive → Return est:',isoDate(returnDt));
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'constructive', destination:car.destination, needsUnload:true, etaStr:car.etaStr });
+      } else if(etaDt){
+        // Has ETA but no constructive — normal loaded
+        const returnDt = addDays(etaDt, 19);
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'loaded', destination:car.destination, needsUnload:false, etaStr:car.etaStr });
+      } else {
+        // Truly no ETA — unknown
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.destination, needsUnload:false, etaStr:car.etaStr||'No ETA' });
       }
     }
   });
