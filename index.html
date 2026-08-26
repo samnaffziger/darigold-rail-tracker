@@ -1688,14 +1688,15 @@ function parseOrderFile(file){
       const shipper    = row[1]||'';
       const receiver   = row[2]||'';
       const destCity   = row[3]||'';
-      const carType    = row[4]||'';
-      const carRaw     = row[6]||'';
-      const soNum      = row[7]||'';
-      const custPO     = row[8]||'';
-      const expShipRaw = row[9];
-      const rddRaw     = row[10];
-      const status     = (row[11]||'').trim();
-      const shipDateRaw= row[12];
+      // col[4] = EDI Sent (ignore)
+      const carRaw     = row[5]||'';
+      const soNum      = row[6]||'';
+      const custPO     = row[7]||'';
+      const expShipRaw = row[8];
+      const rddRaw     = row[9];
+      const status     = (row[10]||'').toString().trim();
+      const shipDateRaw= row[11];
+      // col[12+] = LOUP formula fields (ignore — formula strings)
 
       function safeDate(v){
         if(!v) return null;
@@ -1719,7 +1720,7 @@ function parseOrderFile(file){
       const shipDate= safeDate(shipDateRaw);
 
       ORDER_DATA.push({
-        otm: String(otm), shipper, receiver, destCity, carType,
+        otm: String(otm), shipper, receiver, destCity, carType:'',
         carRaw, carId, soNum: String(soNum), custPO: String(custPO||''),
         expShip, rdd, status, shipDate, loop, rowIndex: i+1
       });
@@ -1806,8 +1807,8 @@ function hideObStatus(){
 
 function renderOrderBoard(){
   const today = REPORT_DATE || new Date();
-  const shipped   = ORDER_DATA.filter(o=>o.status==='Shipped');
-  const unshipped = ORDER_DATA.filter(o=>o.status==='Unshipped');
+  const shipped   = ORDER_DATA.filter(o=>o.status&&o.status.toLowerCase().trim()==='shipped');
+  const unshipped = ORDER_DATA.filter(o=>o.status&&o.status.toLowerCase().trim()==='unshipped');
 
   const updatedStr = ORDER_UPLOADED_AT
     ? `Last updated: ${ORDER_UPLOADED_AT.toLocaleDateString('en-US',{month:'short',day:'numeric'})} at ${ORDER_UPLOADED_AT.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
