@@ -2293,13 +2293,67 @@ function renderSupplyForecast(weeksOut){
         ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due)</span>`
         : `${siteOrders.length}`;
 
-      // Delta: supply (cars due back) minus demand (outbound orders)
+    html += `<table class="sf-table"><thead><tr>
+      <th>Week</th><th>Date Range</th>
+      <th class="num">Cars Due Back</th>
+      <th class="num">Outbound Orders</th>
+      <th class="num">Weekly Net</th>
+      <th class="num">Running Net</th>
+      <th>Details</th>
+    </tr></thead><tbody>`;
+
+    // Past due row already added above — seed running total with negative of past due
+    let runningNet = -pastDueCount;
+
+    // Past due row header update (running net starts negative)
+    if(pastDueCount > 0){
+      // inject running net into the past due row we already built — patch it in
+      html = html.replace(
+        `<td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>\n        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>`,
+        `<td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>
+        <td><div class="sf-count" style="color:var(--red);font-weight:600;">${runningNet}</div></td>
+        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>`
+      );
+      // also fix colspan
+      html = html.replace(`colspan="6" style="padding:0;"><div class="sf-detail-inner">\n          <div class="sf-detail-day">Orders past`,
+        `colspan="7" style="padding:0;"><div class="sf-detail-inner">\n          <div class="sf-detail-day">Orders past`);
+    }
+
+    weeks.forEach((wk,wi)=>{
+      const siteCars = wk.cars.filter(rc=>rc.loop===site);
+      const hasAlert = siteCars.some(rc=>rc.needsUnload);
+      const isPast   = wk.satStr < todayStr;
+      const rowId    = `sfr-${site.replace(/[^a-z]/gi,'')}-${wi}`;
+
+      // Outbound orders for this week
+      const siteOrders = ORDER_DATA.filter(o=>{
+        if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
+        const oSite = shipperToLoop(o.shipper);
+        if(oSite!==site) return false;
+        if(!o.expShip) return false;
+        const expStr = o.expShip.toISOString().slice(0,10);
+        return expStr>=wk.sunStr && expStr<=wk.satStr;
+      });
+      const orderCount = siteOrders.length + (wi===0 ? pastDueCount : 0);
+      const orderLabel = wi===0 && pastDueCount > 0
+        ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due)</span>`
+        : `${siteOrders.length}`;
+
+      // Weekly delta and running total
       const supply = siteCars.length;
-      const delta = supply - orderCount;
-      const deltaCls = delta > 0 ? 'color:var(--green);font-weight:600;' :
-                       delta < 0 ? 'color:var(--red);font-weight:600;' :
+      const weeklyDelta = supply - orderCount;
+      runningNet += weeklyDelta;
+
+      const deltaCls = weeklyDelta > 0 ? 'color:var(--green);font-weight:600;' :
+                       weeklyDelta < 0 ? 'color:var(--red);font-weight:600;' :
                        'color:var(--muted);';
-      const deltaLbl = delta > 0 ? `+${delta}` : delta === 0 ? '±0' : `${delta}`;
+      const deltaLbl = weeklyDelta > 0 ? `+${weeklyDelta}` : weeklyDelta === 0 ? '±0' : `${weeklyDelta}`;
+
+      const runCls   = runningNet > 0 ? 'color:var(--green);font-weight:600;' :
+                       runningNet < 0 ? 'color:var(--red);font-weight:600;' :
+                       'color:var(--muted);font-weight:600;';
+      const runLbl   = runningNet > 0 ? `+${runningNet}` : runningNet === 0 ? '±0' : `${runningNet}`;
+      const runNote  = runningNet === 0 ? ' ✓' : '';
 
       // Group by day
       const byDay = {};
@@ -2311,43 +2365,82 @@ function renderSupplyForecast(weeksOut){
 
       const weekLbl = wi===0 ? 'This Week' : `Week of ${fmtDate(wk.sun)}`;
       const countCls = siteCars.length===0?'zero':hasAlert?'has-alert':'';
-      const detailBtn = siteCars.length ? `<span style="font-size:10px;color:var(--blue);cursor:pointer;" onclick="toggleSFRow('${rowId}')">▶ Show cars</span>` : `<span style="font-size:10px;color:var(--dim);">—</span>`;
+      const hasOrders = siteOrders.length > 0 || (wi===0 && pastDueCount > 0);
+      const hasCars = siteCars.length > 0;
+      const canExpand = hasCars || hasOrders;
+      const detailBtn = canExpand
+        ? `<span style="font-size:10px;color:var(--blue);cursor:pointer;" onclick="toggleSFRow('${rowId}')">▶ Show details</span>`
+        : `<span style="font-size:10px;color:var(--dim);">—</span>`;
 
       html += `<tr class="week-row${hasAlert?' has-alert':''}" style="${isPast?'opacity:.45;':''}"
-        onclick="if(${siteCars.length}) toggleSFRow('${rowId}')">
+        onclick="if(${canExpand}) toggleSFRow('${rowId}')">
         <td><div class="sf-week-label-cell">${weekLbl}</div></td>
         <td><div class="sf-week-range-cell">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div></td>
         <td><div class="sf-count ${countCls}">${siteCars.length}${hasAlert?' ⚠':''}</div></td>
         <td><div class="sf-count ${orderCount===0?'zero':''}">${orderLabel}</div></td>
         <td><div class="sf-count" style="${deltaCls}font-family:'IBM Plex Mono',monospace;font-size:16px;">${deltaLbl}</div></td>
+        <td><div class="sf-count" style="${runCls}font-family:'IBM Plex Mono',monospace;font-size:16px;">${runLbl}${runNote}</div></td>
         <td>${detailBtn}</td>
       </tr>`;
 
-      // Detail row (hidden until toggled)
-      if(siteCars.length){
+      // Detail row — cars returning + outbound orders
+      if(canExpand){
         let detailHtml = '';
-        dayKeys.forEach(day=>{
-          const dayCars = byDay[day];
-          const dayDt = new Date(day+'T12:00:00');
-          detailHtml += `<div class="sf-detail-day">${fmtDay(dayDt)}</div>`;
-          dayCars.forEach(rc=>{
-            const badgeCls = rc.needsUnload?'alert':rc.type==='empty'?'empty':'loaded';
-            const badgeLbl = rc.type==='empty'?'Empty Return':rc.needsUnload?'Needs Unloading':'Loaded → Return';
-            detailHtml += `<div class="sf-car-line">
-              <div class="sf-car-id">${rc.carId}</div>
-              <span class="sf-car-badge ${badgeCls}">${badgeLbl}</span>
-              <div class="sf-car-dest">${rc.destination}</div>
-              ${rc.needsUnload?`<div class="sf-alert-tag">⚠ ETA+20d est.</div>`:`<div class="sf-alert-tag" style="color:var(--muted);">ETA: ${rc.etaStr}</div>`}
+
+        // ── Cars returning this week ──
+        if(hasCars){
+          detailHtml += `<div class="sf-detail-day">🚃 Cars Due Back</div>`;
+          dayKeys.forEach(day=>{
+            const dayCars = byDay[day];
+            const dayDt = new Date(day+'T12:00:00');
+            detailHtml += `<div style="font-size:9px;color:var(--muted);margin:4px 0 2px;font-weight:600;">${fmtDay(dayDt)}</div>`;
+            dayCars.forEach(rc=>{
+              const badgeCls = rc.needsUnload?'alert':rc.type==='empty'?'empty':'loaded';
+              const badgeLbl = rc.type==='empty'?'Empty Return':rc.needsUnload?'Needs Unloading':'Loaded → Return';
+              detailHtml += `<div class="sf-car-line">
+                <div class="sf-car-id">${rc.carId}</div>
+                <span class="sf-car-badge ${badgeCls}">${badgeLbl}</span>
+                <div class="sf-car-dest">${rc.destination}</div>
+                ${rc.needsUnload?`<div class="sf-alert-tag">⚠ ETA+20d est.</div>`:`<div class="sf-alert-tag" style="color:var(--muted);">Carrier ETA: ${rc.etaStr}</div>`}
+              </div>`;
+            });
+          });
+        }
+
+        // ── Outbound orders this week ──
+        const weekOrders = wi===0
+          ? [...siteOrders, ...pastDueOrders.map(o=>({...o, _pastDue:true}))]
+          : siteOrders;
+
+        if(weekOrders.length){
+          if(hasCars) detailHtml += `<div style="height:6px;"></div>`;
+          detailHtml += `<div class="sf-detail-day">📦 Outbound Orders</div>`;
+          weekOrders.sort((a,b)=>(a.expShip||new Date(0))-(b.expShip||new Date(0))).forEach(o=>{
+            const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+            const rddStr = o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+            const isPD = o._pastDue;
+            detailHtml += `<div class="sf-car-line" style="${isPD?'background:rgba(248,81,73,.05);':''}">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);width:105px;flex-shrink:0;">${o.otm||'—'}</div>
+              <span class="sf-car-badge ${isPD?'alert':'loaded'}">${isPD?'Past Due':'Scheduled'}</span>
+              <div class="sf-car-dest" style="flex:1;">${o.receiver||'—'} · ${o.destCity||'—'}</div>
+              <div style="font-size:10px;color:var(--muted);flex-shrink:0;margin-left:8px;">
+                Exp Ship: <strong style="color:${isPD?'var(--red)':'var(--text)'};">${expStr}</strong>
+              </div>
+              <div style="font-size:10px;color:var(--muted);flex-shrink:0;margin-left:8px;">
+                RDD: <strong style="color:var(--text);">${rddStr}</strong>
+              </div>
+              ${o.soNum?`<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);margin-left:8px;">SO# ${o.soNum}</div>`:''}
             </div>`;
           });
-        });
+        }
 
         html += `<tr class="sf-detail-row" id="${rowId}">
-          <td colspan="6" style="padding:0;">
+          <td colspan="7" style="padding:0;">
             <div class="sf-detail-inner">${detailHtml}</div>
           </td>
         </tr>`;
       }
+
     });
 
     // Unknown ETAs
@@ -2359,10 +2452,11 @@ function renderSupplyForecast(weeksOut){
         <td><div class="sf-count" style="color:var(--dim);">${siteUnknown.length}</div></td>
         <td><div class="sf-count" style="color:var(--dim);">—</div></td>
         <td><div class="sf-count" style="color:var(--dim);">—</div></td>
+        <td><div class="sf-count" style="color:var(--dim);">—</div></td>
         <td><span style="font-size:10px;color:var(--muted);cursor:pointer;">▶ Show cars</span></td>
       </tr>
       <tr class="sf-detail-row" id="${rowId}">
-        <td colspan="6" style="padding:0;"><div class="sf-detail-inner">
+        <td colspan="7" style="padding:0;"><div class="sf-detail-inner">
           ${siteUnknown.map(rc=>`<div class="sf-car-line">
             <div class="sf-car-id">${rc.carId}</div>
             <span class="sf-car-badge" style="background:var(--bg3);border-color:var(--border);color:var(--muted);">Unknown</span>
