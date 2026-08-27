@@ -2288,7 +2288,7 @@ function renderSupplyForecast(weeksOut){
       const isPast   = wk.satStr < todayStr;
       const rowId    = 'sfr-' + site.replace(/[^a-z]/gi,'') + '-' + wi;
 
-      // Outbound orders for this week
+      // Outbound orders for this week (scheduled only — past due already seeded into runningNet)
       const siteOrders = ORDER_DATA.filter(o=>{
         if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
         const oSite = shipperToLoop(o.shipper);
@@ -2297,14 +2297,17 @@ function renderSupplyForecast(weeksOut){
         const expStr = o.expShip.toISOString().slice(0,10);
         return expStr>=wk.sunStr && expStr<=wk.satStr;
       });
-      const orderCount = siteOrders.length + (wi===0 ? pastDueCount : 0);
+      // Weekly delta uses only this week's orders — past due deficit is already in runningNet seed
+      const weeklyOrderCount = siteOrders.length;
+      // Display label shows past due reminder on this week only
+      const orderCount = siteOrders.length; // for display
       const orderLabel = wi===0 && pastDueCount > 0
-        ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due)</span>`
+        ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due — see above)</span>`
         : `${siteOrders.length}`;
 
-      // Weekly delta and running total
+      // Weekly delta: supply this week minus demand this week only
       const supply = siteCars.length;
-      const weeklyDelta = supply - orderCount;
+      const weeklyDelta = supply - weeklyOrderCount;
       runningNet += weeklyDelta;
 
       const deltaCls = weeklyDelta > 0 ? 'color:var(--green);font-weight:600;' :
