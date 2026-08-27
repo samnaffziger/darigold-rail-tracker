@@ -2238,61 +2238,9 @@ function renderSupplyForecast(weeksOut){
       return o.expShip.toISOString().slice(0,10) < todayStr;
     });
     const pastDueCount = pastDueOrders.length;
+    let runningNet = -pastDueCount;
 
-    html += `<table class="sf-table"><thead><tr>
-      <th>Week</th><th>Date Range</th>
-      <th class="num">Cars Due Back</th>
-      <th class="num">Outbound Orders</th>
-      <th class="num">Net Supply</th>
-      <th>Details</th>
-    </tr></thead><tbody>`;
-
-    // Past due row — always shown at top if any exist
-    if(pastDueCount > 0){
-      const pdRowId = `sfr-pd-${site.replace(/[^a-z]/gi,'')}`;
-      html += `<tr class="week-row has-alert" onclick="toggleSFRow('${pdRowId}')">
-        <td><div class="sf-week-label-cell" style="color:var(--red);">⚠ Past Due</div></td>
-        <td><div class="sf-week-range-cell" style="color:var(--muted);">Expected ship date passed</div></td>
-        <td><div class="sf-count zero">—</div></td>
-        <td><div class="sf-count" style="color:var(--red);font-weight:600;">${pastDueCount}</div></td>
-        <td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>
-        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>
-      </tr>
-      <tr class="sf-detail-row" id="${pdRowId}">
-        <td colspan="6" style="padding:0;"><div class="sf-detail-inner">
-          <div class="sf-detail-day">Orders past expected ship date</div>
-          ${pastDueOrders.sort((a,b)=>a.expShip-b.expShip).map(o=>`
-            <div class="sf-car-line">
-              <div class="sf-car-id" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">${o.otm}</div>
-              <span class="sf-car-badge alert">Past Due</span>
-              <div class="sf-car-dest">${o.receiver} · ${o.destCity}</div>
-              <div class="sf-alert-tag">Exp: ${o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
-            </div>`).join('')}
-        </div></td>
-      </tr>`;
-    }
-
-    weeks.forEach((wk,wi)=>{
-      const siteCars = wk.cars.filter(rc=>rc.loop===site);
-      const hasAlert = siteCars.some(rc=>rc.needsUnload);
-      const isPast   = wk.satStr < todayStr;
-      const rowId    = `sfr-${site.replace(/[^a-z]/gi,'')}-${wi}`;
-
-      // Outbound orders: unshipped orders from this site with expShip in this week
-      const siteOrders = ORDER_DATA.filter(o=>{
-        if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
-        const oSite = shipperToLoop(o.shipper);
-        if(oSite!==site) return false;
-        if(!o.expShip) return false;
-        const expStr = o.expShip.toISOString().slice(0,10);
-        return expStr>=wk.sunStr && expStr<=wk.satStr;
-      });
-      // For the current week, roll in past due as additional demand
-      const orderCount = siteOrders.length + (wi===0 ? pastDueCount : 0);
-      const orderLabel = wi===0 && pastDueCount > 0
-        ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due)</span>`
-        : `${siteOrders.length}`;
-
+    // Build table header
     html += `<table class="sf-table"><thead><tr>
       <th>Week</th><th>Date Range</th>
       <th class="num">Cars Due Back</th>
@@ -2302,28 +2250,43 @@ function renderSupplyForecast(weeksOut){
       <th>Details</th>
     </tr></thead><tbody>`;
 
-    // Past due row already added above — seed running total with negative of past due
-    let runningNet = -pastDueCount;
-
-    // Past due row header update (running net starts negative)
+    // Past due row — built inline so running net is available
     if(pastDueCount > 0){
-      // inject running net into the past due row we already built — patch it in
-      html = html.replace(
-        `<td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>\n        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>`,
-        `<td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>
+      const pdRowId = 'sfr-pd-' + site.replace(/[^a-z]/gi,'');
+      const pdNetLbl = '-' + pastDueCount;
+      const pdOrders = pastDueOrders.sort((a,b)=>a.expShip-b.expShip).map(o=>{
+        const expLbl = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        const rddLbl = o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        return `<div class="sf-car-line">
+          <div class="sf-car-id" style="font-size:10px;color:var(--muted);">${o.otm||'—'}</div>
+          <span class="sf-car-badge alert">Past Due</span>
+          <div class="sf-car-dest">${o.receiver||'—'} · ${o.destCity||'—'}</div>
+          <div class="sf-alert-tag">Exp: ${expLbl}</div>
+          <div class="sf-alert-tag" style="color:var(--muted);margin-left:4px;">RDD: ${rddLbl}</div>
+        </div>`;
+      }).join('');
+      html += `<tr class="week-row has-alert" onclick="toggleSFRow('${pdRowId}')">
+        <td><div class="sf-week-label-cell" style="color:var(--red);">⚠ Past Due</div></td>
+        <td><div class="sf-week-range-cell" style="color:var(--muted);">Expected ship date passed</div></td>
+        <td><div class="sf-count zero">—</div></td>
+        <td><div class="sf-count" style="color:var(--red);font-weight:600;">${pastDueCount}</div></td>
+        <td><div class="sf-count" style="color:var(--red);font-weight:600;">${pdNetLbl}</div></td>
         <td><div class="sf-count" style="color:var(--red);font-weight:600;">${runningNet}</div></td>
-        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>`
-      );
-      // also fix colspan
-      html = html.replace(`colspan="6" style="padding:0;"><div class="sf-detail-inner">\n          <div class="sf-detail-day">Orders past`,
-        `colspan="7" style="padding:0;"><div class="sf-detail-inner">\n          <div class="sf-detail-day">Orders past`);
+        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>
+      </tr>
+      <tr class="sf-detail-row" id="${pdRowId}">
+        <td colspan="7" style="padding:0;"><div class="sf-detail-inner">
+          <div class="sf-detail-day">Orders past expected ship date</div>
+          ${pdOrders}
+        </div></td>
+      </tr>`;
     }
 
     weeks.forEach((wk,wi)=>{
       const siteCars = wk.cars.filter(rc=>rc.loop===site);
       const hasAlert = siteCars.some(rc=>rc.needsUnload);
       const isPast   = wk.satStr < todayStr;
-      const rowId    = `sfr-${site.replace(/[^a-z]/gi,'')}-${wi}`;
+      const rowId    = 'sfr-' + site.replace(/[^a-z]/gi,'') + '-' + wi;
 
       // Outbound orders for this week
       const siteOrders = ORDER_DATA.filter(o=>{
@@ -2419,17 +2382,20 @@ function renderSupplyForecast(weeksOut){
             const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
             const rddStr = o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
             const isPD = o._pastDue;
+            const expColor = isPD ? 'var(--red)' : 'var(--text)';
+            const soHtml = o.soNum ? `<div style="font-family:monospace;font-size:10px;color:var(--dim);margin-left:8px;">SO# ${o.soNum}</div>` : '';
+            const otmHtml = `<div style="font-family:monospace;font-size:10px;color:var(--muted);width:105px;flex-shrink:0;">${o.otm||'—'}</div>`;
             detailHtml += `<div class="sf-car-line" style="${isPD?'background:rgba(248,81,73,.05);':''}">
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);width:105px;flex-shrink:0;">${o.otm||'—'}</div>
+              ${otmHtml}
               <span class="sf-car-badge ${isPD?'alert':'loaded'}">${isPD?'Past Due':'Scheduled'}</span>
               <div class="sf-car-dest" style="flex:1;">${o.receiver||'—'} · ${o.destCity||'—'}</div>
               <div style="font-size:10px;color:var(--muted);flex-shrink:0;margin-left:8px;">
-                Exp Ship: <strong style="color:${isPD?'var(--red)':'var(--text)'};">${expStr}</strong>
+                Exp Ship: <strong style="color:${expColor};">${expStr}</strong>
               </div>
               <div style="font-size:10px;color:var(--muted);flex-shrink:0;margin-left:8px;">
                 RDD: <strong style="color:var(--text);">${rddStr}</strong>
               </div>
-              ${o.soNum?`<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);margin-left:8px;">SO# ${o.soNum}</div>`:''}
+              ${soHtml}
             </div>`;
           });
         }
