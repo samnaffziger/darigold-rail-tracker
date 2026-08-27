@@ -2229,6 +2229,16 @@ function renderSupplyForecast(weeksOut){
       html+=`<div class="sf-now-cars">${siteAvail.map(rc=>`<div class="sf-now-chip">${rc.carId}</div>`).join('')}</div>`;
     }
 
+    // Past due orders: unshipped orders from this site with expShip before today
+    const pastDueOrders = ORDER_DATA.filter(o=>{
+      if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
+      const oSite = shipperToLoop(o.shipper);
+      if(oSite!==site) return false;
+      if(!o.expShip) return false;
+      return o.expShip.toISOString().slice(0,10) < todayStr;
+    });
+    const pastDueCount = pastDueOrders.length;
+
     html += `<table class="sf-table"><thead><tr>
       <th>Week</th><th>Date Range</th>
       <th class="num">Cars Due Back</th>
@@ -2236,6 +2246,31 @@ function renderSupplyForecast(weeksOut){
       <th class="num">Net Supply</th>
       <th>Details</th>
     </tr></thead><tbody>`;
+
+    // Past due row — always shown at top if any exist
+    if(pastDueCount > 0){
+      const pdRowId = `sfr-pd-${site.replace(/[^a-z]/gi,'')}`;
+      html += `<tr class="week-row has-alert" onclick="toggleSFRow('${pdRowId}')">
+        <td><div class="sf-week-label-cell" style="color:var(--red);">⚠ Past Due</div></td>
+        <td><div class="sf-week-range-cell" style="color:var(--muted);">Expected ship date passed</div></td>
+        <td><div class="sf-count zero">—</div></td>
+        <td><div class="sf-count" style="color:var(--red);font-weight:600;">${pastDueCount}</div></td>
+        <td><div class="sf-count" style="color:var(--red);font-weight:600;">-${pastDueCount}</div></td>
+        <td><span style="font-size:10px;color:var(--blue);cursor:pointer;">▶ Show orders</span></td>
+      </tr>
+      <tr class="sf-detail-row" id="${pdRowId}">
+        <td colspan="6" style="padding:0;"><div class="sf-detail-inner">
+          <div class="sf-detail-day">Orders past expected ship date</div>
+          ${pastDueOrders.sort((a,b)=>a.expShip-b.expShip).map(o=>`
+            <div class="sf-car-line">
+              <div class="sf-car-id" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">${o.otm}</div>
+              <span class="sf-car-badge alert">Past Due</span>
+              <div class="sf-car-dest">${o.receiver} · ${o.destCity}</div>
+              <div class="sf-alert-tag">Exp: ${o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+            </div>`).join('')}
+        </div></td>
+      </tr>`;
+    }
 
     weeks.forEach((wk,wi)=>{
       const siteCars = wk.cars.filter(rc=>rc.loop===site);
@@ -2252,7 +2287,11 @@ function renderSupplyForecast(weeksOut){
         const expStr = o.expShip.toISOString().slice(0,10);
         return expStr>=wk.sunStr && expStr<=wk.satStr;
       });
-      const orderCount = siteOrders.length;
+      // For the current week, roll in past due as additional demand
+      const orderCount = siteOrders.length + (wi===0 ? pastDueCount : 0);
+      const orderLabel = wi===0 && pastDueCount > 0
+        ? `${siteOrders.length} <span style="color:var(--red);font-size:9px;">(+${pastDueCount} past due)</span>`
+        : `${siteOrders.length}`;
 
       // Delta: supply (cars due back) minus demand (outbound orders)
       const supply = siteCars.length;
@@ -2279,7 +2318,7 @@ function renderSupplyForecast(weeksOut){
         <td><div class="sf-week-label-cell">${weekLbl}</div></td>
         <td><div class="sf-week-range-cell">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div></td>
         <td><div class="sf-count ${countCls}">${siteCars.length}${hasAlert?' ⚠':''}</div></td>
-        <td><div class="sf-count ${orderCount===0?'zero':''}">${orderCount}</div></td>
+        <td><div class="sf-count ${orderCount===0?'zero':''}">${orderLabel}</div></td>
         <td><div class="sf-count" style="${deltaCls}font-family:'IBM Plex Mono',monospace;font-size:16px;">${deltaLbl}</div></td>
         <td>${detailBtn}</td>
       </tr>`;
