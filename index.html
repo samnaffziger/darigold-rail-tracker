@@ -1018,10 +1018,18 @@ function detailRow(car,type){
       const today=REPORT_DATE||new Date();
       const daysToRdd=order.rdd?Math.round((order.rdd-today)/86400000):null;
       const rddCls=daysToRdd===null?'':daysToRdd<0?'color:var(--red)':daysToRdd<=5?'color:var(--yellow)':'color:var(--muted)';
-      orderTag=`<div class="dr-note" style="max-width:none;display:flex;gap:8px;flex-wrap:wrap;">
+      orderTag=`<div class="dr-note" style="max-width:none;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <span style="color:var(--text);font-weight:500;">${order.receiver}</span>
-        ${order.soNum?`<span style="color:var(--muted);">SO# ${order.soNum}</span>`:''}
-        ${rddStr?`<span style="${rddCls}">RDD: ${rddStr}</span>`:''}
+        ${order.otm?`<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">OTM# ${order.otm}</span>`:''}
+        ${order.soNum?`<span style="color:var(--muted);font-size:10px;">SO# ${order.soNum}</span>`:''}
+        ${rddStr?`<span style="${rddCls};font-size:10px;">RDD: ${rddStr}</span>`:''}
+      </div>`;
+    } else if(ORDER_DATA.length > 0){
+      // Master tracker is loaded but no order linked to this car
+      orderTag=`<div class="dr-note" style="max-width:none;">
+        <span style="font-size:10px;color:var(--yellow);background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:3px;padding:1px 6px;">
+          ⚠ Add car # to order in Master Rail Tracker
+        </span>
       </div>`;
     }
   }
