@@ -2232,6 +2232,8 @@ function renderSupplyForecast(weeksOut){
     html += `<table class="sf-table"><thead><tr>
       <th>Week</th><th>Date Range</th>
       <th class="num">Cars Due Back</th>
+      <th class="num">Outbound Orders</th>
+      <th class="num">Net Supply</th>
       <th>Details</th>
     </tr></thead><tbody>`;
 
@@ -2240,6 +2242,25 @@ function renderSupplyForecast(weeksOut){
       const hasAlert = siteCars.some(rc=>rc.needsUnload);
       const isPast   = wk.satStr < todayStr;
       const rowId    = `sfr-${site.replace(/[^a-z]/gi,'')}-${wi}`;
+
+      // Outbound orders: unshipped orders from this site with expShip in this week
+      const siteOrders = ORDER_DATA.filter(o=>{
+        if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
+        const oSite = shipperToLoop(o.shipper);
+        if(oSite!==site) return false;
+        if(!o.expShip) return false;
+        const expStr = o.expShip.toISOString().slice(0,10);
+        return expStr>=wk.sunStr && expStr<=wk.satStr;
+      });
+      const orderCount = siteOrders.length;
+
+      // Delta: supply (cars due back) minus demand (outbound orders)
+      const supply = siteCars.length;
+      const delta = supply - orderCount;
+      const deltaCls = delta > 0 ? 'color:var(--green);font-weight:600;' :
+                       delta < 0 ? 'color:var(--red);font-weight:600;' :
+                       'color:var(--muted);';
+      const deltaLbl = delta > 0 ? `+${delta}` : delta === 0 ? '±0' : `${delta}`;
 
       // Group by day
       const byDay = {};
@@ -2258,6 +2279,8 @@ function renderSupplyForecast(weeksOut){
         <td><div class="sf-week-label-cell">${weekLbl}</div></td>
         <td><div class="sf-week-range-cell">${fmtDate(wk.sun)} – ${fmtDate(wk.sat)}</div></td>
         <td><div class="sf-count ${countCls}">${siteCars.length}${hasAlert?' ⚠':''}</div></td>
+        <td><div class="sf-count ${orderCount===0?'zero':''}">${orderCount}</div></td>
+        <td><div class="sf-count" style="${deltaCls}font-family:'IBM Plex Mono',monospace;font-size:16px;">${deltaLbl}</div></td>
         <td>${detailBtn}</td>
       </tr>`;
 
@@ -2281,7 +2304,7 @@ function renderSupplyForecast(weeksOut){
         });
 
         html += `<tr class="sf-detail-row" id="${rowId}">
-          <td colspan="4" style="padding:0;">
+          <td colspan="6" style="padding:0;">
             <div class="sf-detail-inner">${detailHtml}</div>
           </td>
         </tr>`;
@@ -2295,10 +2318,12 @@ function renderSupplyForecast(weeksOut){
         <td><div class="sf-week-label-cell" style="color:var(--muted);">Unknown Return</div></td>
         <td><div class="sf-week-range-cell">No ETA available</div></td>
         <td><div class="sf-count" style="color:var(--dim);">${siteUnknown.length}</div></td>
+        <td><div class="sf-count" style="color:var(--dim);">—</div></td>
+        <td><div class="sf-count" style="color:var(--dim);">—</div></td>
         <td><span style="font-size:10px;color:var(--muted);cursor:pointer;">▶ Show cars</span></td>
       </tr>
       <tr class="sf-detail-row" id="${rowId}">
-        <td colspan="4" style="padding:0;"><div class="sf-detail-inner">
+        <td colspan="6" style="padding:0;"><div class="sf-detail-inner">
           ${siteUnknown.map(rc=>`<div class="sf-car-line">
             <div class="sf-car-id">${rc.carId}</div>
             <span class="sf-car-badge" style="background:var(--bg3);border-color:var(--border);color:var(--muted);">Unknown</span>
