@@ -604,9 +604,10 @@ async function init(){
       return;
     }
 
-    // Auto-load the most recent date
-    await loadDateFromDB(dates[0].report_date);
+    // Load order board FIRST so ORDER_DATA is populated when renderTab1 runs
     await loadOrderBoardFromDB();
+    // Then load the most recent fleet date (which calls renderTab1 internally)
+    await loadDateFromDB(dates[0].report_date);
   }catch(e){
     document.getElementById('ph-title').textContent='Could not connect to database';
     document.getElementById('ph-sub').textContent=e.message;
