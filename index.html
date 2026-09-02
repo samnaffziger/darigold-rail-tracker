@@ -2684,7 +2684,9 @@ async function setSystemCarEta(otm, etaDate, site){
   renderTab1();
 }
 
+window._fleetInit = init;
 window.setSystemCarEta = setSystemCarEta;
+window.assignCar = assignCar;
 window.renderSupplyForecast = renderSupplyForecast;
 window.toggleSFRow = toggleSFRow;
 window.switchTab = switchTab;
