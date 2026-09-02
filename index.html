@@ -606,6 +606,7 @@ async function init(){
 
     // Load order board FIRST so ORDER_DATA is populated when renderTab1 runs
     await loadOrderBoardFromDB();
+    await loadAssignments();
     // Then load the most recent fleet date (which calls renderTab1 internally)
     await loadDateFromDB(dates[0].report_date);
   }catch(e){
@@ -1093,6 +1094,55 @@ function renderTab1(){
     if(lH.length){d+=`<div class="dsec-lbl">🔴 Delayed / Held (${lH.length})</div>`;d+=lH.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'held')).join('');}
     if(lI.length){d+=`<div class="dsec-lbl">🔄 Empty inbound (${lI.length})</div>`;d+=lI.sort((a,b)=>a.etaDt&&b.etaDt?a.etaDt-b.etaDt:0).map(c=>detailRow(c,'inbound')).join('');}
     if(lS.length){d+=`<div class="dsec-lbl">📤 Shipped last 7 days (${lS.length})</div>`;d+=lS.map(c=>detailRow(c,'shipped')).join('');}
+    // Unshipped orders for this site
+    const unshippedOrders = ORDER_DATA.filter(o=>{
+      if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
+      return shipperToLoop(o.shipper)===site;
+    }).sort((a,b)=>(a.expShip||new Date(9999,0))-(b.expShip||new Date(9999,0)));
+
+    if(unshippedOrders.length){
+      const today = REPORT_DATE||new Date();
+      // Available cars for this loop (on-site + waiting + held empties)
+      const availCars = ALL_CARS.filter(c=>
+        c.loop===site && c.section==='EMPTY' &&
+        (c.emptyStatus==='onsite'||c.emptyStatus==='waiting'||c.emptyStatus==='held')
+      );
+      d+=`<div class="dsec-lbl" style="border-top:2px solid var(--accent);margin-top:4px;">📦 Unshipped Orders (${unshippedOrders.length})</div>`;
+      unshippedOrders.forEach(o=>{
+        const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        const rddStr = o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        const daysToExp = o.expShip ? Math.round((o.expShip-today)/86400000) : null;
+        const expCls = daysToExp===null?'':daysToExp<0?'color:var(--red)':daysToExp<=3?'color:var(--yellow)':'color:var(--muted)';
+        const daysToRdd = o.rdd ? Math.round((o.rdd-today)/86400000) : null;
+        const rddCls = daysToRdd===null?'':daysToRdd<0?'color:var(--red)':daysToRdd<=5?'color:var(--yellow)':'color:var(--muted)';
+        // Current assignment (from local ORDER_DATA or saved assignment)
+        const assignedCar = o.carId && o.carId!=='' ? o.carId : (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!=='' ? o.carRaw : null);
+        const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
+        // Build dropdown options
+        const opts = availCars.map(c=>`<option value="${c.id}" ${assignedCar===c.id?'selected':''}>${c.id} (${c.emptyStatus==='onsite'?'on-site':c.emptyStatus==='waiting'?'waiting':'held'})</option>`).join('');
+        d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
+          <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;width:90px;">OTM# ${o.otm||'—'}</div>
+            <div style="flex:1;font-size:11px;font-weight:600;color:var(--text);min-width:120px;">${o.receiver||'—'}</div>
+            <div style="font-size:10px;color:var(--muted);flex-shrink:0;">${o.destCity||''}</div>
+            <div style="font-size:10px;flex-shrink:0;${expCls}">Ship: ${expStr}</div>
+            <div style="font-size:10px;flex-shrink:0;${rddCls}">RDD: ${rddStr}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;">
+            <span style="font-size:10px;color:var(--muted);flex-shrink:0;">Assign car:</span>
+            <select onchange="assignCar('${safeOtm}',this.value,'${site}')"
+              style="font-size:10px;background:var(--bg);border:1px solid ${assignedCar?'var(--green-bd)':'var(--border)'};border-radius:3px;padding:2px 6px;color:${assignedCar?'var(--green)':'var(--muted)'};outline:none;cursor:pointer;">
+              <option value="">— Select car —</option>
+              ${opts}
+              <option value="SYSTEM" ${assignedCar==='SYSTEM'?'selected':''}>System Car</option>
+              ${assignedCar&&!availCars.find(c=>c.id===assignedCar)&&assignedCar!=='SYSTEM'?`<option value="${assignedCar}" selected>${assignedCar} (assigned)</option>`:''}
+            </select>
+            ${assignedCar?`<span style="font-size:10px;color:var(--green);">✓ ${assignedCar==='SYSTEM'?'System Car':assignedCar}</span>`:`<span style="font-size:10px;color:var(--yellow);">⚠ No car assigned</span>`}
+          </div>
+        </div>`;
+      });
+    }
+
     if(!d)d=`<div class="drow" style="color:var(--dim);padding:10px 12px;">No cars in this loop today</div>`;
     grid.innerHTML+=`<div class="lcard${hasCrit?' has-crit':hasWarn?' has-warn':''}">
       <div class="lcard-hdr"><div class="lcard-name">${SITE_LBL[site]}</div><div style="text-align:right"><div class="lcard-total">${tot}</div><div class="lcard-total-lbl">cars in loop</div></div></div>
@@ -1818,6 +1868,7 @@ function parseOrderFile(file){
       },{onConflict:'id'});
 
       ORDER_UPLOADED_AT = new Date();
+      await loadAssignments();
       setObStatus('saved', `✓ Saved ${ORDER_DATA.length} orders`);
       setTimeout(()=>hideObStatus(), 3000);
     }catch(err){
@@ -2462,7 +2513,53 @@ function toggleSFRow(id){
   el.classList.toggle('open');
 }
 
-window._fleetInit = init;
+// ── CAR ASSIGNMENT ──
+async function assignCar(otm, carId, site){
+  if(!otm) return;
+  // Update ORDER_DATA locally
+  const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
+  if(order){
+    order.carId = carId || null;
+    order.carRaw = carId || '';
+  }
+  // Save to Supabase assignments table
+  try{
+    if(carId){
+      await supabase.from('order_assignments').upsert({
+        otm_number: String(otm),
+        car_id: carId,
+        site: site,
+        assigned_at: new Date().toISOString()
+      },{onConflict:'otm_number'});
+    } else {
+      await supabase.from('order_assignments').delete().eq('otm_number', String(otm));
+    }
+  }catch(e){
+    console.warn('Assignment save failed:', e.message);
+  }
+  // Re-render Tab 1 to reflect new assignment
+  renderTab1();
+}
+
+// Load saved assignments and merge into ORDER_DATA
+async function loadAssignments(){
+  try{
+    const {data} = await supabase.from('order_assignments').select('otm_number,car_id');
+    if(!data||!data.length) return;
+    const map = {};
+    data.forEach(r=>{ map[r.otm_number]=r.car_id; });
+    ORDER_DATA.forEach(o=>{
+      if(map[String(o.otm)]){
+        o.carId = map[String(o.otm)];
+        o.carRaw = map[String(o.otm)];
+      }
+    });
+  }catch(e){
+    // table may not exist yet — fail silently
+  }
+}
+
+window.assignCar = assignCar;
 window.renderSupplyForecast = renderSupplyForecast;
 window.toggleSFRow = toggleSFRow;
 window.switchTab = switchTab;
