@@ -1149,6 +1149,19 @@ function renderTab1(){
           return 0;
         });
 
+      // Build set of cars already assigned to OTHER orders at this site
+      // (computed once outside the per-order loop so it's up to date for each order)
+      function getAssignedCarsForSite(currentOtm){
+        const taken = new Set();
+        unshippedOrders.forEach(o=>{
+          if(String(o.otm)===String(currentOtm)) return; // skip current order
+          const car = o.carId && o.carId!==''&&o.carId!=='SYSTEM' ? o.carId :
+                      (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!==''&&o.carRaw!=='SYSTEM' ? o.carRaw : null);
+          if(car) taken.add(car);
+        });
+        return taken;
+      }
+
       d+=`<div class="dsec-lbl" style="border-top:2px solid var(--accent);margin-top:4px;">📦 Unshipped Orders (${unshippedOrders.length})</div>`;
       unshippedOrders.forEach(o=>{
         const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
@@ -1165,11 +1178,20 @@ function renderTab1(){
         const assignedCar = o.carId && o.carId!=='' ? o.carId : (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!=='' ? o.carRaw : null);
         const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
 
-        // Build grouped dropdown options
-        const nowOpts    = loopCars.filter(c=>c.returnEta.status==='now');
-        const inboundOpts= loopCars.filter(c=>c.returnEta.status==='inbound');
-        const loadedOpts = loopCars.filter(c=>c.returnEta.status==='loaded'||c.returnEta.status==='constructive');
-        const unknownOpts= loopCars.filter(c=>c.returnEta.status==='unknown');
+        // Cars already taken by other orders at this site
+        const takenCars = getAssignedCarsForSite(o.otm);
+
+        // Filter loopCars: exclude taken cars (but keep the currently assigned car for this order)
+        function isAvailable(c){
+          if(c.id===assignedCar) return true; // always show own assignment
+          return !takenCars.has(c.id);
+        }
+
+        // Build grouped dropdown options — exclude taken cars
+        const nowOpts    = loopCars.filter(c=>c.returnEta.status==='now'      && isAvailable(c));
+        const inboundOpts= loopCars.filter(c=>c.returnEta.status==='inbound'  && isAvailable(c));
+        const loadedOpts = loopCars.filter(c=>(c.returnEta.status==='loaded'||c.returnEta.status==='constructive') && isAvailable(c));
+        const unknownOpts= loopCars.filter(c=>c.returnEta.status==='unknown'  && isAvailable(c));
 
         function optHtml(c){
           const sel = assignedCar===c.id ? 'selected' : '';
@@ -1191,6 +1213,7 @@ function renderTab1(){
             <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;width:90px;">OTM# ${o.otm||'—'}</div>
             <div style="flex:1;font-size:11px;font-weight:600;color:var(--text);min-width:120px;">${o.receiver||'—'}</div>
             <div style="font-size:10px;color:var(--muted);flex-shrink:0;">${o.destCity||''}</div>
+            ${o.soNum?`<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;">SO# ${o.soNum}</div>`:''}
             <div style="font-size:10px;flex-shrink:0;${expCls}">Ship: ${expStr}</div>
             <div style="font-size:10px;flex-shrink:0;${rddCls}">RDD: ${rddStr}</div>
             ${ediHtml}
