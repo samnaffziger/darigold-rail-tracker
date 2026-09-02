@@ -1175,7 +1175,10 @@ function renderTab1(){
         const ediHtml = ediStr
           ? `<span style="font-size:10px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:3px;padding:1px 5px;flex-shrink:0;">EDI ✓ ${ediStr}</span>`
           : `<span style="font-size:10px;background:var(--yellow-bg);border:1px solid var(--yellow-bd);color:var(--yellow);border-radius:3px;padding:1px 5px;flex-shrink:0;">EDI not sent</span>`;
-        const assignedCar = o.carId && o.carId!=='' ? o.carId : (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!=='' ? o.carRaw : null);
+        const assignedCar = (o.carId && o.carId!=='')
+          ? o.carId
+          : (o.carRaw && o.carRaw!=='' && o.carRaw.toLowerCase()!=='next to be loaded' && o.carRaw!=='SYSTEM'
+            ? o.carRaw : (o.carRaw==='SYSTEM' ? 'SYSTEM' : null));
         const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
 
         // Cars already taken by other orders at this site
@@ -2630,8 +2633,8 @@ async function assignCar(otm, carId, site){
   const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
   if(order){
     order.carId = carId || null;
-    order.carRaw = carId || '';
-    if(carId !== 'SYSTEM') order.systemCarEta = null; // clear ETA if not system car
+    order.carRaw = carId || '';  // clear both so assignedCar check returns null
+    order.systemCarEta = (carId==='SYSTEM') ? (order.systemCarEta||null) : null;
   }
   try{
     if(carId){
