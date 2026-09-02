@@ -1102,11 +1102,53 @@ function renderTab1(){
 
     if(unshippedOrders.length){
       const today = REPORT_DATE||new Date();
-      // Available cars for this loop (on-site + waiting + held empties)
-      const availCars = ALL_CARS.filter(c=>
-        c.loop===site && c.section==='EMPTY' &&
-        (c.emptyStatus==='onsite'||c.emptyStatus==='waiting'||c.emptyStatus==='held')
-      );
+
+      // Build return ETA for every car in this loop (same logic as Supply Forecast)
+      function getCarReturnEta(car){
+        const isConstructive = car.etaStr && (
+          car.etaStr.toLowerCase().includes('constructive') ||
+          car.etaStr.toLowerCase().includes('actual'));
+        // Get usable ETA date
+        let etaDt = car.etaDt;
+        if(!etaDt && car.etaStr){
+          const s = String(car.etaStr).trim();
+          if(!s.toLowerCase().includes('constructive')&&!s.toLowerCase().includes('actual')&&
+             !s.toLowerCase().includes('delayed')&&!s.toLowerCase().includes('held')){
+            const d = new Date(s);
+            if(!isNaN(d)&&d.getFullYear()>=2024&&d.getFullYear()<=2030) etaDt=d;
+          }
+        }
+        if(car.section==='EMPTY'){
+          if(car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held')
+            return {date:null, label:'Available now', status:'now'};
+          if(etaDt) return {date:etaDt, label:'ETA '+etaDt.toLocaleDateString('en-US',{month:'short',day:'numeric'}), status:'inbound'};
+          return {date:null, label:'Unknown ETA', status:'unknown'};
+        } else if(car.section==='LOADED'){
+          if(isConstructive){
+            const r = new Date(today); r.setDate(r.getDate()+20);
+            return {date:r, label:'~'+r.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' (needs unload)', status:'constructive'};
+          }
+          if(etaDt){
+            const r = new Date(etaDt); r.setDate(r.getDate()+19);
+            return {date:r, label:'~'+r.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' (ETA+19)', status:'loaded'};
+          }
+          return {date:null, label:'Unknown ETA', status:'unknown'};
+        }
+        return {date:null, label:'Unknown', status:'unknown'};
+      }
+
+      // All cars in this loop, sorted: available now → inbound → loaded → unknown
+      const statusOrder = {now:0, inbound:1, constructive:2, loaded:3, unknown:4};
+      const loopCars = ALL_CARS
+        .filter(c=>c.loop===site && c.section!=='SHOP')
+        .map(c=>({ ...c, returnEta: getCarReturnEta(c) }))
+        .sort((a,b)=>{
+          const so = statusOrder[a.returnEta.status] - statusOrder[b.returnEta.status];
+          if(so!==0) return so;
+          if(a.returnEta.date&&b.returnEta.date) return a.returnEta.date-b.returnEta.date;
+          return 0;
+        });
+
       d+=`<div class="dsec-lbl" style="border-top:2px solid var(--accent);margin-top:4px;">📦 Unshipped Orders (${unshippedOrders.length})</div>`;
       unshippedOrders.forEach(o=>{
         const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
@@ -1115,11 +1157,30 @@ function renderTab1(){
         const expCls = daysToExp===null?'':daysToExp<0?'color:var(--red)':daysToExp<=3?'color:var(--yellow)':'color:var(--muted)';
         const daysToRdd = o.rdd ? Math.round((o.rdd-today)/86400000) : null;
         const rddCls = daysToRdd===null?'':daysToRdd<0?'color:var(--red)':daysToRdd<=5?'color:var(--yellow)':'color:var(--muted)';
-        // Current assignment (from local ORDER_DATA or saved assignment)
         const assignedCar = o.carId && o.carId!=='' ? o.carId : (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!=='' ? o.carRaw : null);
         const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
-        // Build dropdown options
-        const opts = availCars.map(c=>`<option value="${c.id}" ${assignedCar===c.id?'selected':''}>${c.id} (${c.emptyStatus==='onsite'?'on-site':c.emptyStatus==='waiting'?'waiting':'held'})</option>`).join('');
+
+        // Build grouped dropdown options
+        const nowOpts    = loopCars.filter(c=>c.returnEta.status==='now');
+        const inboundOpts= loopCars.filter(c=>c.returnEta.status==='inbound');
+        const loadedOpts = loopCars.filter(c=>c.returnEta.status==='loaded'||c.returnEta.status==='constructive');
+        const unknownOpts= loopCars.filter(c=>c.returnEta.status==='unknown');
+
+        function optHtml(c){
+          const sel = assignedCar===c.id ? 'selected' : '';
+          return `<option value="${c.id}" ${sel}>${c.id} — ${c.returnEta.label}</option>`;
+        }
+
+        let opts = '';
+        if(nowOpts.length)     opts+=`<optgroup label="✅ Available Now">${nowOpts.map(optHtml).join('')}</optgroup>`;
+        if(inboundOpts.length) opts+=`<optgroup label="🔄 Inbound Empty">${inboundOpts.map(optHtml).join('')}</optgroup>`;
+        if(loadedOpts.length)  opts+=`<optgroup label="🚃 Loaded (Est. Return)">${loadedOpts.map(optHtml).join('')}</optgroup>`;
+        if(unknownOpts.length) opts+=`<optgroup label="❓ Unknown Return">${unknownOpts.map(optHtml).join('')}</optgroup>`;
+
+        // Show return ETA for currently assigned car
+        const assignedCarObj = assignedCar ? loopCars.find(c=>c.id===assignedCar) : null;
+        const assignedEtaNote = assignedCarObj ? ` · ${assignedCarObj.returnEta.label}` : '';
+
         d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;width:90px;">OTM# ${o.otm||'—'}</div>
@@ -1128,16 +1189,17 @@ function renderTab1(){
             <div style="font-size:10px;flex-shrink:0;${expCls}">Ship: ${expStr}</div>
             <div style="font-size:10px;flex-shrink:0;${rddCls}">RDD: ${rddStr}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;">
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;flex-wrap:wrap;">
             <span style="font-size:10px;color:var(--muted);flex-shrink:0;">Assign car:</span>
             <select onchange="assignCar('${safeOtm}',this.value,'${site}')"
-              style="font-size:10px;background:var(--bg);border:1px solid ${assignedCar?'var(--green-bd)':'var(--border)'};border-radius:3px;padding:2px 6px;color:${assignedCar?'var(--green)':'var(--muted)'};outline:none;cursor:pointer;">
+              style="font-size:10px;background:var(--bg);border:1px solid ${assignedCar?'var(--green-bd)':'var(--border)'};border-radius:3px;padding:2px 6px;color:${assignedCar?'var(--green)':'var(--muted)'};outline:none;cursor:pointer;max-width:280px;">
               <option value="">— Select car —</option>
               ${opts}
               <option value="SYSTEM" ${assignedCar==='SYSTEM'?'selected':''}>System Car</option>
-              ${assignedCar&&!availCars.find(c=>c.id===assignedCar)&&assignedCar!=='SYSTEM'?`<option value="${assignedCar}" selected>${assignedCar} (assigned)</option>`:''}
             </select>
-            ${assignedCar?`<span style="font-size:10px;color:var(--green);">✓ ${assignedCar==='SYSTEM'?'System Car':assignedCar}</span>`:`<span style="font-size:10px;color:var(--yellow);">⚠ No car assigned</span>`}
+            ${assignedCar
+              ? `<span style="font-size:10px;color:var(--green);">✓ ${assignedCar==='SYSTEM'?'System Car':assignedCar}${assignedEtaNote}</span>`
+              : `<span style="font-size:10px;color:var(--yellow);">⚠ No car assigned</span>`}
           </div>
         </div>`;
       });
