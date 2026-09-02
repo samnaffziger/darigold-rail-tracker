@@ -1207,6 +1207,11 @@ function renderTab1(){
         // Show return ETA for currently assigned car
         const assignedCarObj = assignedCar ? loopCars.find(c=>c.id===assignedCar) : null;
         const assignedEtaNote = assignedCarObj ? ` · ${assignedCarObj.returnEta.label}` : '';
+        const isSystemCar = assignedCar === 'SYSTEM';
+        const systemEta = o.systemCarEta || '';
+        const systemEtaDisplay = systemEta
+          ? new Date(systemEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
+          : '';
 
         d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
@@ -1224,12 +1229,20 @@ function renderTab1(){
               style="font-size:10px;background:var(--bg);border:1px solid ${assignedCar?'var(--green-bd)':'var(--border)'};border-radius:3px;padding:2px 6px;color:${assignedCar?'var(--green)':'var(--muted)'};outline:none;cursor:pointer;max-width:280px;">
               <option value="">— Select car —</option>
               ${opts}
-              <option value="SYSTEM" ${assignedCar==='SYSTEM'?'selected':''}>System Car</option>
+              <option value="SYSTEM" ${isSystemCar?'selected':''}>System Car</option>
             </select>
             ${assignedCar
-              ? `<span style="font-size:10px;color:var(--green);">✓ ${assignedCar==='SYSTEM'?'System Car':assignedCar}${assignedEtaNote}</span>`
+              ? `<span style="font-size:10px;color:var(--green);">✓ ${isSystemCar?'System Car':assignedCar}${!isSystemCar?assignedEtaNote:systemEtaDisplay?' · ETA '+systemEtaDisplay:''}</span>`
               : `<span style="font-size:10px;color:var(--yellow);">⚠ No car assigned</span>`}
           </div>
+          ${isSystemCar ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;">
+            <span style="font-size:10px;color:var(--muted);flex-shrink:0;">System car ETA:</span>
+            <input type="date" value="${systemEta}"
+              onchange="setSystemCarEta('${safeOtm}',this.value,'${site}')"
+              style="font-size:10px;background:var(--bg);border:1px solid var(--blue-bd);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;"
+              placeholder="Select return date">
+            <span style="font-size:10px;color:var(--muted);">Expected return to origin</span>
+          </div>` : ''}
         </div>`;
       });
     }
@@ -2614,50 +2627,62 @@ function toggleSFRow(id){
 // ── CAR ASSIGNMENT ──
 async function assignCar(otm, carId, site){
   if(!otm) return;
-  // Update ORDER_DATA locally
   const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
   if(order){
     order.carId = carId || null;
     order.carRaw = carId || '';
+    if(carId !== 'SYSTEM') order.systemCarEta = null; // clear ETA if not system car
   }
-  // Save to Supabase assignments table
   try{
     if(carId){
       await supabase.from('order_assignments').upsert({
         otm_number: String(otm),
         car_id: carId,
         site: site,
+        system_car_eta: carId==='SYSTEM' ? (order&&order.systemCarEta||null) : null,
         assigned_at: new Date().toISOString()
       },{onConflict:'otm_number'});
     } else {
       await supabase.from('order_assignments').delete().eq('otm_number', String(otm));
     }
-  }catch(e){
-    console.warn('Assignment save failed:', e.message);
-  }
-  // Re-render Tab 1 to reflect new assignment
+  }catch(e){ console.warn('Assignment save failed:', e.message); }
   renderTab1();
 }
 
 // Load saved assignments and merge into ORDER_DATA
 async function loadAssignments(){
   try{
-    const {data} = await supabase.from('order_assignments').select('otm_number,car_id');
+    const {data} = await supabase.from('order_assignments').select('otm_number,car_id,system_car_eta');
     if(!data||!data.length) return;
     const map = {};
-    data.forEach(r=>{ map[r.otm_number]=r.car_id; });
+    data.forEach(r=>{ map[r.otm_number]={carId:r.car_id, systemCarEta:r.system_car_eta||null}; });
     ORDER_DATA.forEach(o=>{
       if(map[String(o.otm)]){
-        o.carId = map[String(o.otm)];
-        o.carRaw = map[String(o.otm)];
+        o.carId = map[String(o.otm)].carId;
+        o.carRaw = map[String(o.otm)].carId;
+        o.systemCarEta = map[String(o.otm)].systemCarEta;
       }
     });
-  }catch(e){
-    // table may not exist yet — fail silently
-  }
+  }catch(e){ /* table may not exist yet */ }
 }
 
-window.assignCar = assignCar;
+async function setSystemCarEta(otm, etaDate, site){
+  const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
+  if(order) order.systemCarEta = etaDate || null;
+  // Save to Supabase alongside the assignment
+  try{
+    await supabase.from('order_assignments').upsert({
+      otm_number: String(otm),
+      car_id: 'SYSTEM',
+      site: site,
+      system_car_eta: etaDate || null,
+      assigned_at: new Date().toISOString()
+    },{onConflict:'otm_number'});
+  }catch(e){ console.warn('System ETA save failed:', e.message); }
+  renderTab1();
+}
+
+window.setSystemCarEta = setSystemCarEta;
 window.renderSupplyForecast = renderSupplyForecast;
 window.toggleSFRow = toggleSFRow;
 window.switchTab = switchTab;
