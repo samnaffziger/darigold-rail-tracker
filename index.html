@@ -1157,6 +1157,11 @@ function renderTab1(){
         const expCls = daysToExp===null?'':daysToExp<0?'color:var(--red)':daysToExp<=3?'color:var(--yellow)':'color:var(--muted)';
         const daysToRdd = o.rdd ? Math.round((o.rdd-today)/86400000) : null;
         const rddCls = daysToRdd===null?'':daysToRdd<0?'color:var(--red)':daysToRdd<=5?'color:var(--yellow)':'color:var(--muted)';
+        // EDI Sent
+        const ediStr = o.ediSent ? o.ediSent.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null;
+        const ediHtml = ediStr
+          ? `<span style="font-size:10px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:3px;padding:1px 5px;flex-shrink:0;">EDI ✓ ${ediStr}</span>`
+          : `<span style="font-size:10px;background:var(--yellow-bg);border:1px solid var(--yellow-bd);color:var(--yellow);border-radius:3px;padding:1px 5px;flex-shrink:0;">EDI not sent</span>`;
         const assignedCar = o.carId && o.carId!=='' ? o.carId : (o.carRaw&&o.carRaw.toLowerCase()!=='next to be loaded'&&o.carRaw!=='' ? o.carRaw : null);
         const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
 
@@ -1188,6 +1193,7 @@ function renderTab1(){
             <div style="font-size:10px;color:var(--muted);flex-shrink:0;">${o.destCity||''}</div>
             <div style="font-size:10px;flex-shrink:0;${expCls}">Ship: ${expStr}</div>
             <div style="font-size:10px;flex-shrink:0;${rddCls}">RDD: ${rddStr}</div>
+            ${ediHtml}
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;flex-wrap:wrap;">
             <span style="font-size:10px;color:var(--muted);flex-shrink:0;">Assign car:</span>
@@ -1863,7 +1869,8 @@ function parseOrderFile(file){
       const shipper    = row[1]||'';
       const receiver   = row[2]||'';
       const destCity   = row[3]||'';
-      // col[4] = EDI Sent (ignore)
+      // col[4] = EDI Sent date (date sent to warehouse, null = not yet sent)
+      const ediSentRaw = row[4];
       const carRaw     = row[5]||'';
       const soNum      = row[6]||'';
       const custPO     = row[7]||'';
@@ -1893,11 +1900,12 @@ function parseOrderFile(file){
       const expShip = safeDate(expShipRaw);
       const rdd     = safeDate(rddRaw);
       const shipDate= safeDate(shipDateRaw);
+      const ediSent = safeDate(ediSentRaw);
 
       ORDER_DATA.push({
         otm: String(otm), shipper, receiver, destCity, carType:'',
         carRaw, carId, soNum: String(soNum), custPO: String(custPO||''),
-        expShip, rdd, status, shipDate, loop, rowIndex: i+1
+        expShip, rdd, status, shipDate, ediSent, loop, rowIndex: i+1
       });
     });
 
@@ -1916,6 +1924,7 @@ function parseOrderFile(file){
         rdd: o.rdd?o.rdd.toISOString().slice(0,10):null,
         status: o.status,
         ship_date: o.shipDate?o.shipDate.toISOString().slice(0,10):null,
+        edi_sent: o.ediSent?o.ediSent.toISOString().slice(0,10):null,
         loop: o.loop, row_index: o.rowIndex
       }));
       for(let i=0;i<rows_to_insert.length;i+=200){
@@ -1959,6 +1968,7 @@ async function loadOrderBoardFromDB(){
       expShip: r.exp_ship?new Date(r.exp_ship+'T12:00:00'):null,
       rdd: r.rdd?new Date(r.rdd+'T12:00:00'):null,
       status: r.status||'', shipDate: r.ship_date?new Date(r.ship_date+'T12:00:00'):null,
+      ediSent: r.edi_sent?new Date(r.edi_sent+'T12:00:00'):null,
       loop: r.loop||null, rowIndex: r.row_index
     }));
     renderOrderBoard();
@@ -2038,6 +2048,9 @@ function renderOrderBoard(){
                 <span class="ob-meta-item"><strong>Type:</strong> ${o.carType}</span>
                 ${o.expShip?`<span class="ob-meta-item"><strong>Exp Ship:</strong> ${o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`:''}
                 ${o.soNum?`<span class="ob-meta-item"><strong>SO#:</strong> ${o.soNum}</span>`:''}
+                <span class="ob-meta-item" style="${o.ediSent?'color:var(--green)':'color:var(--yellow)'}">
+                  <strong>EDI:</strong> ${o.ediSent?'✓ '+o.ediSent.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'Not sent'}
+                </span>
               </div>
               <div><span class="ob-car-chip unassigned">⚠ No car assigned</span></div>
             </div>`;
