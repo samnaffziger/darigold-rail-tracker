@@ -2629,22 +2629,22 @@ function toggleSFRow(id){
 // ── CAR ASSIGNMENT ──
 async function assignCar(otm, carId, site){
   if(!otm) return;
-  const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
-  if(order){
-    order.carId = carId || null;
-    order.systemCarEta = (carId==='SYSTEM') ? (order.systemCarEta||null) : null;
-  }
+  const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(!order){ console.warn('assignCar: order not found for OTM', otm, 'available:', ORDER_DATA.map(o=>o.otm)); return; }
+  order.carId = carId || null;
+  order.systemCarEta = (carId==='SYSTEM') ? (order.systemCarEta||null) : null;
   try{
     if(carId){
       await supabase.from('order_assignments').upsert({
-        otm_number: String(otm),
+        otm_number: otmStr,
         car_id: carId,
         site: site,
-        system_car_eta: carId==='SYSTEM' ? (order&&order.systemCarEta||null) : null,
+        system_car_eta: carId==='SYSTEM' ? (order.systemCarEta||null) : null,
         assigned_at: new Date().toISOString()
       },{onConflict:'otm_number'});
     } else {
-      await supabase.from('order_assignments').delete().eq('otm_number', String(otm));
+      await supabase.from('order_assignments').delete().eq('otm_number', otmStr);
     }
   }catch(e){ console.warn('Assignment save failed:', e.message); }
   renderTab1();
@@ -2656,18 +2656,20 @@ async function loadAssignments(){
     const {data} = await supabase.from('order_assignments').select('otm_number,car_id,system_car_eta');
     if(!data||!data.length) return;
     const map = {};
-    data.forEach(r=>{ map[r.otm_number]={carId:r.car_id, systemCarEta:r.system_car_eta||null}; });
+    data.forEach(r=>{ map[String(r.otm_number).trim()]={carId:r.car_id, systemCarEta:r.system_car_eta||null}; });
     ORDER_DATA.forEach(o=>{
-      if(map[String(o.otm)]){
-        o.carId = map[String(o.otm)].carId;
-        o.systemCarEta = map[String(o.otm)].systemCarEta;
+      const key = String(o.otm).trim();
+      if(map[key]){
+        o.carId = map[key].carId;
+        o.systemCarEta = map[key].systemCarEta;
       }
     });
   }catch(e){ /* table may not exist yet */ }
 }
 
 async function setSystemCarEta(otm, etaDate, site){
-  const order = ORDER_DATA.find(o=>String(o.otm)===String(otm));
+  const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
   if(order) order.systemCarEta = etaDate || null;
   // Save to Supabase alongside the assignment
   try{
