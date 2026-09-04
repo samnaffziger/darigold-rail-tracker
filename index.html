@@ -1125,8 +1125,13 @@ function renderTab1(){
           return {date:null, label:'Unknown ETA', status:'unknown'};
         } else if(car.section==='LOADED'){
           if(isConstructive){
-            const r = new Date(today); r.setDate(r.getDate()+20);
-            return {date:r, label:'~'+r.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' (needs unload)', status:'constructive'};
+            // Placement date = report date minus current dwell (how long it's been placed)
+            // Return ETA = placement date + 20 days
+            const placementDt = new Date(today);
+            if(car.dwell > 0) placementDt.setDate(placementDt.getDate() - Math.round(car.dwell));
+            const r = new Date(placementDt); r.setDate(r.getDate()+20);
+            const placedDaysAgo = car.dwell > 0 ? `placed ${Math.round(car.dwell)}d ago` : 'just placed';
+            return {date:r, label:'~'+r.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' ('+placedDaysAgo+', needs unload)', status:'constructive'};
           }
           if(etaDt){
             const r = new Date(etaDt); r.setDate(r.getDate()+19);
@@ -2346,9 +2351,11 @@ function renderSupplyForecast(weeksOut){
         console.log(car.id,'Loaded ETA:',isoDate(etaDt),'Return:',isoDate(returnDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'loaded', destination:car.destination, needsUnload:false, etaStr:car.etaStr });
       } else if(isConstructive){
-        // Constructive placement — already at destination, estimate today + 20 days to return
-        const returnDt = addDays(today, 20);
-        console.log(car.id,'Constructive → Return est:',isoDate(returnDt));
+        // Placement date = report date minus dwell; return = placement date + 20 days
+        const placementDt = new Date(today);
+        if(car.dwell > 0) placementDt.setDate(placementDt.getDate() - Math.round(car.dwell));
+        const returnDt = addDays(placementDt, 20);
+        console.log(car.id,'Constructive → Placed ~'+isoDate(placementDt)+' Return est:',isoDate(returnDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'constructive', destination:car.destination, needsUnload:true, etaStr:car.etaStr });
       } else if(etaDt){
         // Has ETA but no constructive — normal loaded
