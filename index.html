@@ -2381,6 +2381,10 @@ function renderSupplyForecast(weeksOut){
         const returnDt = addDays(placementDt, 20);
         console.log(car.id,'Inbound+CLM Z/Y placed at dest → Return est:',isoDate(returnDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'constructive', destination:car.currentLoc, needsUnload:true, etaStr:'Placed at '+car.currentLoc });
+      } else if(car.emptyStatus==='inbound' && !etaDt){
+        if(car.id==='CRYX 003333'||car.id==='CRYX 003400')
+          console.log('DEBUG',car.id,'clm=',JSON.stringify(car.clm),'emptyStatus=',car.emptyStatus,'atOrigin=',atOrigin,'etaDt=',etaDt);
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr||'Unknown' });
       } else if(car.emptyStatus==='inbound' && etaDt){
         console.log(car.id,'Empty inbound ETA:',isoDate(etaDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(etaDt), type:'empty', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr });
