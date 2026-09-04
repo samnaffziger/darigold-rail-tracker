@@ -2334,9 +2334,15 @@ function renderSupplyForecast(weeksOut){
 
   const returnCars = []; // { carId, loop, returnDate, type, destination, needsUnload, etaStr }
 
-  ALL_CARS.forEach(car=>{
-    if(!car.loop || car.loop==='SHOP') return;
-    if(car.section==='SHOP') return;
+  ALL_CARS.forEach(carOrig=>{
+    if(carOrig.section==='SHOP') return;
+    // Resolve loop — stored loop or infer from currentLoc/destination for empty cars at customer sites
+    let resolvedLoop = carOrig.loop;
+    if(!resolvedLoop && carOrig.section==='EMPTY'){
+      resolvedLoop = SITES.find(s=>carOrig.destination&&carOrig.destination.toUpperCase().includes(s.split(',')[0]))||null;
+    }
+    if(!resolvedLoop || resolvedLoop==='SHOP') return;
+    const car = resolvedLoop!==carOrig.loop ? {...carOrig, loop:resolvedLoop} : carOrig;
 
     const etaDt = getEtaDt(car);
 
