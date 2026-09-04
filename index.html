@@ -1119,8 +1119,17 @@ function renderTab1(){
           }
         }
         if(car.section==='EMPTY'){
-          if(car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held')
+          const siteKey = (site||'').split(',')[0].toUpperCase();
+          const atOrigin = siteKey && car.currentLoc && car.currentLoc.toUpperCase().includes(siteKey);
+          if((car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held') && atOrigin)
             return {date:null, label:'Available now', status:'now'};
+          if((car.emptyStatus==='onsite'||car.emptyStatus==='waiting') && !atOrigin){
+            // Empty placed at customer — estimate placement date + 20 days
+            const placementDt = new Date(today);
+            if(car.dwell > 0) placementDt.setDate(placementDt.getDate() - Math.round(car.dwell));
+            const r = new Date(placementDt); r.setDate(r.getDate()+20);
+            return {date:r, label:'~'+r.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' (placed at dest, needs return)', status:'constructive'};
+          }
           if(etaDt) return {date:etaDt, label:'ETA '+etaDt.toLocaleDateString('en-US',{month:'short',day:'numeric'}), status:'inbound'};
           return {date:null, label:'Unknown ETA', status:'unknown'};
         } else if(car.section==='LOADED'){
@@ -2337,8 +2346,22 @@ function renderSupplyForecast(weeksOut){
     );
 
     if(car.section==='EMPTY'){
-      if(car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held'){
+      // Check if car is actually at its origin site or at a customer/destination
+      const siteKeywords = (car.loop||'').split(',')[0].toUpperCase(); // e.g. "CONNELL"
+      const atOrigin = siteKeywords && car.currentLoc && car.currentLoc.toUpperCase().includes(siteKeywords);
+
+      if((car.emptyStatus==='onsite'||car.emptyStatus==='waiting'||car.emptyStatus==='held') && atOrigin){
+        // Truly at origin — available now
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'available', destination:car.currentLoc, needsUnload:false, etaStr:'On site' });
+      } else if((car.emptyStatus==='onsite'||car.emptyStatus==='waiting') && !atOrigin){
+        // Empty but placed at customer/destination — needs to return, use dwell + 20 days
+        const placementDt = new Date(today);
+        if(car.dwell > 0) placementDt.setDate(placementDt.getDate() - Math.round(car.dwell));
+        const returnDt = addDays(placementDt, 20);
+        console.log(car.id,'Empty placed at dest → Return est:',isoDate(returnDt));
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(returnDt), type:'constructive', destination:car.currentLoc, needsUnload:true, etaStr:'Placed at '+car.currentLoc });
+      } else if(car.emptyStatus==='held' && !atOrigin){
+        returnCars.push({ carId:car.id, loop:car.loop, returnDate:null, type:'unknown', destination:car.currentLoc, needsUnload:false, etaStr:'Delayed/Held at '+car.currentLoc });
       } else if(car.emptyStatus==='inbound' && etaDt){
         console.log(car.id,'Empty inbound ETA:',isoDate(etaDt));
         returnCars.push({ carId:car.id, loop:car.loop, returnDate:isoDate(etaDt), type:'empty', destination:car.currentLoc, needsUnload:false, etaStr:car.etaStr });
