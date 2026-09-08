@@ -541,7 +541,24 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 .ct-note{font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;}
 </style>
 
-<!-- Password check — must be non-module so onclick can reach it -->
+<!-- Delivery confirmation modal -->
+<div id="deliver-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:90%;max-width:420px;padding:24px;">
+    <div id="deliver-modal-title" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;"></div>
+    <div id="deliver-modal-body" style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="document.getElementById('deliver-modal').style.display='none'"
+        style="font-size:12px;padding:6px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--muted);">
+        Cancel
+      </button>
+      <button id="deliver-modal-confirm"
+        onclick="doDeliver(this.dataset.otm)"
+        style="font-size:12px;padding:6px 16px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:5px;cursor:pointer;color:var(--green);font-weight:600;">
+        ✓ Confirm Delivered
+      </button>
+    </div>
+  </div>
+</div>
 <script>
 function checkPw(){
   const val=document.getElementById('pw-input').value;
@@ -1088,7 +1105,39 @@ function renderTab1(){
     const hasCrit=lO.some(c=>c.dwell>=30)||lW.some(c=>c.dwell>=30);
     const hasWarn=!hasCrit&&(lO.some(c=>c.dwell>=7)||lW.length>0||lH.length>0);
     let d='';
-    if(lL.length){d+=`<div class="dsec-lbl">🟢 Loaded — outbound (${lL.length})</div>`;d+=lL.map(c=>detailRow(c,'loaded')).join('');}
+    // System car shipped orders — show in loaded outbound section
+    const systemShipped = ORDER_DATA.filter(o=>{
+      if(o.carId!=='SYSTEM'||!o.systemShipped) return false;
+      return shipperToLoop(o.shipper)===site;
+    });
+
+    if(lL.length||systemShipped.length){
+      d+=`<div class="dsec-lbl">🟢 Loaded — outbound (${lL.length+systemShipped.length})</div>`;
+      d+=lL.map(c=>detailRow(c,'loaded')).join('');
+      d+=systemShipped.map(o=>{
+        const etaStr = o.systemCarEta ? new Date(o.systemCarEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+        const shipStr = o.systemShipDate ? new Date(o.systemShipDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        const safeOtm2 = String(o.otm||'').replace(/['"&<>]/g,c=>({'\'':'&#39;','"':'&quot;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        return `<div class="drow" style="flex-wrap:wrap;padding:5px 12px;border-top:1px solid rgba(48,54,61,.45);background:rgba(63,185,80,.04);">
+          <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
+            <div class="dr-id" style="color:var(--green);">SYSTEM</div>
+            <div style="flex:1;font-size:11px;font-weight:600;color:var(--text);">${o.receiver||'—'}</div>
+            <div style="font-size:10px;color:var(--muted);">→ ${o.destCity||'—'}</div>
+            ${o.soNum?`<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">SO# ${o.soNum}</div>`:''}
+            <div style="font-size:10px;color:var(--muted);">Shipped: ${shipStr}</div>
+            <div class="dr-eta eta-nu">ETA: ${etaStr}</div>
+            <button data-otm="${safeOtm2}"
+              onclick="confirmDeliver(this.dataset.otm)"
+              style="font-size:9px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:3px;padding:2px 7px;cursor:pointer;flex-shrink:0;">
+              ✓ Mark Delivered
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+    } else if(lL.length){
+      d+=`<div class="dsec-lbl">🟢 Loaded — outbound (${lL.length})</div>`;
+      d+=lL.map(c=>detailRow(c,'loaded')).join('');
+    }
     if(lO.length){d+=`<div class="dsec-lbl">📍 Empty on-site (${lO.length})</div>`;d+=lO.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'onsite')).join('');}
     if(lW.length){d+=`<div class="dsec-lbl">⏳ Waiting to be placed (${lW.length})</div>`;d+=lW.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'waiting')).join('');}
     if(lH.length){d+=`<div class="dsec-lbl">🔴 Delayed / Held (${lH.length})</div>`;d+=lH.sort((a,b)=>b.dwell-a.dwell).map(c=>detailRow(c,'held')).join('');}
@@ -1097,6 +1146,8 @@ function renderTab1(){
     // Unshipped orders for this site
     const unshippedOrders = ORDER_DATA.filter(o=>{
       if((o.status||'').toLowerCase().trim()!=='unshipped') return false;
+      if(o.delivered) return false; // already delivered
+      if(o.carId==='SYSTEM' && o.systemShipped) return false; // shipped system cars go to outbound
       return shipperToLoop(o.shipper)===site;
     }).sort((a,b)=>(a.expShip||new Date(9999,0))-(b.expShip||new Date(9999,0)));
 
@@ -1198,7 +1249,7 @@ function renderTab1(){
         // Use carId as single source of truth for assignment state
         // carRaw from the master tracker may say "next to be loaded" — ignore it for display
         const assignedCar = (o.carId && o.carId!=='') ? o.carId : null;
-        const safeOtm = (o.otm||'').replace(/'/g,"&#39;");
+        const safeOtm = String(o.otm||'').replace(/['"&<>]/g, c=>({'\'':'&#39;','"':'&quot;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
         // Cars already taken by other orders at this site
         const takenCars = getAssignedCarsForSite(o.otm);
@@ -1226,14 +1277,37 @@ function renderTab1(){
         if(loadedOpts.length)  opts+=`<optgroup label="🚃 Loaded (Est. Return)">${loadedOpts.map(optHtml).join('')}</optgroup>`;
         if(unknownOpts.length) opts+=`<optgroup label="❓ Unknown Return">${unknownOpts.map(optHtml).join('')}</optgroup>`;
 
-        // Show return ETA for currently assigned car
-        const assignedCarObj = assignedCar ? loopCars.find(c=>c.id===assignedCar) : null;
-        const assignedEtaNote = assignedCarObj ? ` · ${assignedCarObj.returnEta.label}` : '';
-        const isSystemCar = assignedCar === 'SYSTEM';
-        const systemEta = o.systemCarEta || '';
-        const systemEtaDisplay = systemEta
-          ? new Date(systemEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
-          : '';
+        // System car tracking fields
+        const isShipped    = isSystemCar && !!o.systemShipped;
+        const shipDateVal  = o.systemShipDate || '';
+        const systemEtaVal = o.systemCarEta || '';
+        const shipDateDisplay = shipDateVal ? new Date(shipDateVal+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+        const etaDisplay   = systemEtaVal ? new Date(systemEtaVal+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+
+        // Check for mismatch: daily report shows this car as LOADED (shipped) but order is still unshipped
+        let mismatchHtml = '';
+        if(assignedCar && assignedCar !== 'SYSTEM'){
+          const liveCarData = ALL_CARS.find(c=>c.id===assignedCar);
+          if(liveCarData && liveCarData.section==='LOADED' && liveCarData.waybillDate){
+            const wbStr = liveCarData.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+            mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
+              background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
+              <span>⚠️</span>
+              <span style="color:var(--yellow);font-weight:600;">Daily report shows this car shipped ${wbStr}.</span>
+              <span style="color:var(--muted);">Update Master Rail Tracker to mark as Shipped.</span>
+            </div>`;
+          } else if(liveCarData && liveCarData.section==='EMPTY'){
+            const emptyDesc = liveCarData.emptyStatus==='onsite'?'on-site empty':
+                              liveCarData.emptyStatus==='waiting'?'waiting to be placed':
+                              liveCarData.emptyStatus==='inbound'?'empty, heading back':'empty';
+            mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
+              background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
+              <span>⚠️</span>
+              <span style="color:var(--yellow);font-weight:600;">Daily report shows ${assignedCar} is ${emptyDesc}.</span>
+              <span style="color:var(--muted);">Update Master Rail Tracker.</span>
+            </div>`;
+          }
+        }
 
         d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
@@ -1245,25 +1319,49 @@ function renderTab1(){
             <div style="font-size:10px;flex-shrink:0;${rddCls}">RDD: ${rddStr}</div>
             ${ediHtml}
           </div>
+          ${mismatchHtml}
           <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;flex-wrap:wrap;">
             <span style="font-size:10px;color:var(--muted);flex-shrink:0;">Assign car:</span>
-            <select onchange="assignCar('${safeOtm}',this.value,'${site}')"
+            <select data-otm="${safeOtm}" data-site="${site}"
+              onchange="assignCar(this.dataset.otm,this.value,this.dataset.site)"
               style="font-size:10px;background:var(--bg);border:1px solid ${assignedCar?'var(--green-bd)':'var(--border)'};border-radius:3px;padding:2px 6px;color:${assignedCar?'var(--green)':'var(--muted)'};outline:none;cursor:pointer;max-width:280px;">
               <option value="">— Select car —</option>
               ${opts}
               <option value="SYSTEM" ${isSystemCar?'selected':''}>System Car</option>
             </select>
             ${assignedCar
-              ? `<span style="font-size:10px;color:var(--green);">✓ ${isSystemCar?'System Car':assignedCar}${!isSystemCar?assignedEtaNote:systemEtaDisplay?' · ETA '+systemEtaDisplay:''}</span>`
+              ? `<span style="font-size:10px;color:var(--green);">✓ ${isSystemCar?'System Car':assignedCar}${!isSystemCar?assignedEtaNote:''}</span>`
               : `<span style="font-size:10px;color:var(--yellow);">⚠ No car assigned</span>`}
           </div>
-          ${isSystemCar ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:98px;width:100%;">
-            <span style="font-size:10px;color:var(--muted);flex-shrink:0;">System car ETA:</span>
-            <input type="date" value="${systemEta}"
-              onchange="setSystemCarEta('${safeOtm}',this.value,'${site}')"
-              style="font-size:10px;background:var(--bg);border:1px solid var(--blue-bd);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;"
-              placeholder="Select return date">
-            <span style="font-size:10px;color:var(--muted);">Expected return to origin</span>
+          ${isSystemCar ? `
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding:8px 12px 8px 98px;background:var(--bg3);border-top:1px solid var(--border);border-radius:0 0 4px 4px;flex-wrap:wrap;width:100%;gap:12px;">
+            <!-- Shipped toggle -->
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:10px;color:var(--muted);">Shipped:</span>
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+                <input type="checkbox" ${isShipped?'checked':''}
+                  data-otm="${safeOtm}" data-site="${site}"
+                  onchange="setSystemShipped(this.dataset.otm,this.checked,this.dataset.site)"
+                  style="width:14px;height:14px;cursor:pointer;accent-color:var(--green);">
+                <span style="font-size:10px;font-weight:600;color:${isShipped?'var(--green)':'var(--muted)'};">${isShipped?'Yes — Shipped':'No — Not yet shipped'}</span>
+              </label>
+            </div>
+            <!-- Ship date -->
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="font-size:10px;color:var(--muted);">Ship date:</span>
+              <input type="date" value="${shipDateVal}"
+                data-otm="${safeOtm}" data-site="${site}"
+                onchange="setSystemShipDate(this.dataset.otm,this.value,this.dataset.site)"
+                style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;">
+            </div>
+            <!-- ETA -->
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="font-size:10px;color:var(--muted);">Est. delivery:</span>
+              <input type="date" value="${systemEtaVal}"
+                data-otm="${safeOtm}" data-site="${site}"
+                onchange="setSystemCarEta(this.dataset.otm,this.value,this.dataset.site)"
+                style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;">
+            </div>
           </div>` : ''}
         </div>`;
       });
@@ -2706,22 +2804,96 @@ async function assignCar(otm, carId, site){
 // Load saved assignments and merge into ORDER_DATA
 async function loadAssignments(){
   try{
-    const {data} = await supabase.from('order_assignments').select('otm_number,car_id,system_car_eta');
+    const {data} = await supabase.from('order_assignments')
+      .select('otm_number,car_id,system_car_eta,shipped,ship_date,delivered');
     if(!data||!data.length) return;
     const map = {};
-    data.forEach(r=>{ map[String(r.otm_number).trim()]={carId:r.car_id, systemCarEta:r.system_car_eta||null}; });
+    data.forEach(r=>{ map[String(r.otm_number).trim()]={
+      carId: r.car_id,
+      systemCarEta: r.system_car_eta||null,
+      systemShipped: !!r.shipped,
+      systemShipDate: r.ship_date||null,
+      delivered: !!r.delivered
+    }; });
     ORDER_DATA.forEach(o=>{
       const key = String(o.otm).trim();
       if(map[key]){
-        o.carId = map[key].carId;
-        o.systemCarEta = map[key].systemCarEta;
+        o.carId          = map[key].carId;
+        o.systemCarEta   = map[key].systemCarEta;
+        o.systemShipped  = map[key].systemShipped;
+        o.systemShipDate = map[key].systemShipDate;
+        o.delivered      = map[key].delivered;
+        // Mark delivered orders as shipped so they drop off unshipped list
+        if(map[key].delivered) o.status = 'Shipped';
       }
     });
   }catch(e){ /* table may not exist yet */ }
 }
 
-async function setSystemCarEta(otm, etaDate, site){
+async function setSystemShipped(otm, checked, site){
   const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(order) order.systemShipped = checked;
+  try{
+    await supabase.from('order_assignments').upsert({
+      otm_number: otmStr, car_id:'SYSTEM', site,
+      shipped: checked,
+      assigned_at: new Date().toISOString()
+    },{onConflict:'otm_number'});
+  }catch(e){ console.warn('Shipped save failed:',e.message); }
+  renderTab1();
+}
+
+async function setSystemShipDate(otm, date, site){
+  const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(order) order.systemShipDate = date||null;
+  try{
+    await supabase.from('order_assignments').upsert({
+      otm_number: otmStr, car_id:'SYSTEM', site,
+      ship_date: date||null,
+      assigned_at: new Date().toISOString()
+    },{onConflict:'otm_number'});
+  }catch(e){ console.warn('Ship date save failed:',e.message); }
+  renderTab1();
+}
+
+function confirmDeliver(otm){
+  const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(!order) return;
+  const modal = document.getElementById('deliver-modal');
+  document.getElementById('deliver-modal-title').textContent = `Mark as Delivered — OTM# ${order.otm}`;
+  document.getElementById('deliver-modal-body').textContent =
+    `${order.receiver||''} · ${order.destCity||''} — confirm this shipment has been delivered and remove it from the report?`;
+  document.getElementById('deliver-modal-confirm').dataset.otm = otmStr;
+  modal.style.display = 'flex';
+}
+
+async function doDeliver(otm){
+  const otmStr = String(otm).trim();
+  document.getElementById('deliver-modal').style.display='none';
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(order) order.delivered = true;
+  try{
+    await supabase.from('order_assignments').upsert({
+      otm_number: otmStr, car_id:'SYSTEM',
+      delivered: true,
+      delivered_at: new Date().toISOString(),
+      assigned_at: new Date().toISOString()
+    },{onConflict:'otm_number'});
+    // Also mark order as shipped in ORDER_DATA so it drops off unshipped list
+    if(order){ order.status='Shipped'; order.systemDelivered=true; }
+  }catch(e){ console.warn('Deliver save failed:',e.message); }
+  renderTab1();
+}
+
+window.setSystemShipped = setSystemShipped;
+window.setSystemShipDate = setSystemShipDate;
+window.confirmDeliver = confirmDeliver;
+window.doDeliver = doDeliver;
+
+async function setSystemCarEta(otm, etaDate, site){
   const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
   if(order) order.systemCarEta = etaDate || null;
   // Save to Supabase alongside the assignment
