@@ -1115,6 +1115,7 @@ function renderTab1(){
       d+=`<div class="dsec-lbl">🟢 Loaded — outbound (${lL.length+systemShipped.length})</div>`;
       d+=lL.map(c=>detailRow(c,'loaded')).join('');
       d+=systemShipped.map(o=>{
+        const isSystemCarShipped = true;
         const etaStr = o.systemCarEta ? new Date(o.systemCarEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
         const shipStr = o.systemShipDate ? new Date(o.systemShipDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
         const safeOtm2 = String(o.otm||'').replace(/['"&<>]/g,c=>({'\'':'&#39;','"':'&quot;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1278,6 +1279,7 @@ function renderTab1(){
         if(unknownOpts.length) opts+=`<optgroup label="❓ Unknown Return">${unknownOpts.map(optHtml).join('')}</optgroup>`;
 
         // System car tracking fields
+        const isSystemCar  = assignedCar === 'SYSTEM';
         const isShipped    = isSystemCar && !!o.systemShipped;
         const shipDateVal  = o.systemShipDate || '';
         const systemEtaVal = o.systemCarEta || '';
