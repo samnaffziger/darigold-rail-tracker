@@ -541,7 +541,36 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 .ct-note{font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;}
 </style>
 
-<!-- Delivery confirmation modal -->
+<!-- Shipped confirmation modal -->
+<div id="shipped-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:90%;max-width:420px;padding:24px;">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;">Confirm Shipment</div>
+    <div id="shipped-modal-body" style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:5px;">
+        <label style="font-size:11px;color:var(--muted);">Ship date:</label>
+        <input type="date" id="shipped-modal-date"
+          style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:3px 8px;color:var(--text);outline:none;">
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <label style="font-size:11px;color:var(--muted);">Est. delivery:</label>
+        <input type="date" id="shipped-modal-eta"
+          style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:3px 8px;color:var(--text);outline:none;">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="document.getElementById('shipped-modal').style.display='none'"
+        style="font-size:12px;padding:6px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--muted);">
+        Cancel
+      </button>
+      <button id="shipped-modal-confirm"
+        onclick="doShipped(this.dataset.otm,this.dataset.site)"
+        style="font-size:12px;padding:6px 16px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:5px;cursor:pointer;color:var(--green);font-weight:600;">
+        🚃 Confirm Shipped
+      </button>
+    </div>
+  </div>
+</div>
 <div id="deliver-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:90%;max-width:420px;padding:24px;">
     <div id="deliver-modal-title" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;"></div>
@@ -1348,18 +1377,24 @@ function renderTab1(){
           </div>
           ${isSystemCar ? `
           <div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding:8px 12px 8px 98px;background:var(--bg3);border-top:1px solid var(--border);border-radius:0 0 4px 4px;flex-wrap:wrap;width:100%;gap:12px;">
-            <!-- Shipped toggle -->
-            <div style="display:flex;align-items:center;gap:6px;">
-              <span style="font-size:10px;color:var(--muted);">Shipped:</span>
-              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
-                <input type="checkbox" ${isShipped?'checked':''}
-                  data-otm="${safeOtm}" data-site="${site}"
-                  onchange="setSystemShipped(this.dataset.otm,this.checked,this.dataset.site)"
-                  style="width:14px;height:14px;cursor:pointer;accent-color:var(--green);">
-                <span style="font-size:10px;font-weight:600;color:${isShipped?'var(--green)':'var(--muted)'};">${isShipped?'Yes — Shipped':'No — Not yet shipped'}</span>
-              </label>
+            ${!isShipped ? `
+            <!-- Not yet shipped — show action button -->
+            <button data-otm="${safeOtm}" data-site="${site}"
+              onclick="confirmShipped(this.dataset.otm, this.dataset.site)"
+              style="font-size:11px;font-weight:600;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:4px;padding:4px 12px;cursor:pointer;flex-shrink:0;">
+              🚃 Mark as Shipped
+            </button>
+            <span style="font-size:10px;color:var(--muted);">Click when this order has shipped on a system car</span>
+            ` : `
+            <!-- Shipped — show status + fields -->
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <span style="font-size:11px;font-weight:600;color:var(--green);">✓ Shipped</span>
+              <button data-otm="${safeOtm}" data-site="${site}"
+                onclick="setSystemShipped(this.dataset.otm,false,this.dataset.site)"
+                style="font-size:9px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:1px 6px;cursor:pointer;">
+                Undo
+              </button>
             </div>
-            <!-- Ship date -->
             <div style="display:flex;align-items:center;gap:5px;">
               <span style="font-size:10px;color:var(--muted);">Ship date:</span>
               <input type="date" value="${shipDateVal}"
@@ -1367,7 +1402,6 @@ function renderTab1(){
                 onchange="setSystemShipDate(this.dataset.otm,this.value,this.dataset.site)"
                 style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;">
             </div>
-            <!-- ETA -->
             <div style="display:flex;align-items:center;gap:5px;">
               <span style="font-size:10px;color:var(--muted);">Est. delivery:</span>
               <input type="date" value="${systemEtaVal}"
@@ -1375,6 +1409,7 @@ function renderTab1(){
                 onchange="setSystemCarEta(this.dataset.otm,this.value,this.dataset.site)"
                 style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 6px;color:var(--text);outline:none;cursor:pointer;">
             </div>
+            `}
           </div>` : ''}
         </div>`;
       });
@@ -2842,6 +2877,48 @@ async function loadAssignments(){
     });
   }catch(e){ /* table may not exist yet */ }
 }
+
+function confirmShipped(otm, site){
+  const otmStr = String(otm).trim();
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(!order) return;
+  document.getElementById('shipped-modal-body').textContent =
+    `Confirm that ${order.receiver||'this order'} (OTM# ${order.otm}, SO# ${order.soNum||'—'}) has shipped on a system car.`;
+  // Pre-fill today as ship date
+  const today = REPORT_DATE ? REPORT_DATE.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+  document.getElementById('shipped-modal-date').value = order.systemShipDate || today;
+  document.getElementById('shipped-modal-eta').value = order.systemCarEta || '';
+  const btn = document.getElementById('shipped-modal-confirm');
+  btn.dataset.otm = otmStr;
+  btn.dataset.site = site;
+  document.getElementById('shipped-modal').style.display = 'flex';
+}
+
+async function doShipped(otm, site){
+  const otmStr = String(otm).trim();
+  const shipDate = document.getElementById('shipped-modal-date').value;
+  const eta = document.getElementById('shipped-modal-eta').value;
+  document.getElementById('shipped-modal').style.display = 'none';
+  const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
+  if(order){
+    order.systemShipped = true;
+    order.systemShipDate = shipDate || null;
+    order.systemCarEta = eta || null;
+  }
+  try{
+    await supabase.from('order_assignments').upsert({
+      otm_number: otmStr, car_id:'SYSTEM', site,
+      shipped: true,
+      ship_date: shipDate || null,
+      system_car_eta: eta || null,
+      assigned_at: new Date().toISOString()
+    },{onConflict:'otm_number'});
+  }catch(e){ console.warn('Shipped save failed:',e.message); }
+  renderTab1();
+}
+
+window.confirmShipped = confirmShipped;
+window.doShipped = doShipped;
 
 async function setSystemShipped(otm, checked, site){
   const otmStr = String(otm).trim();
