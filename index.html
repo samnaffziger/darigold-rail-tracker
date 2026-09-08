@@ -1105,10 +1105,16 @@ function renderTab1(){
     const hasCrit=lO.some(c=>c.dwell>=30)||lW.some(c=>c.dwell>=30);
     const hasWarn=!hasCrit&&(lO.some(c=>c.dwell>=7)||lW.length>0||lH.length>0);
     let d='';
-    // System car shipped orders — show in loaded outbound section
+    // System car / foreign car shipped orders — show in loaded outbound section
+    // Includes: SYSTEM assignments + any shipped order whose car isn't in ALL_CARS (ARMN, etc.)
+    const cryx_ids = new Set(ALL_CARS.map(c=>c.id));
     const systemShipped = ORDER_DATA.filter(o=>{
-      if(o.carId!=='SYSTEM'||!o.systemShipped) return false;
-      return shipperToLoop(o.shipper)===site;
+      if(shipperToLoop(o.shipper)!==site) return false;
+      if(o.delivered) return false;
+      const isSystemAssigned = o.carId==='SYSTEM' && o.systemShipped;
+      const isTrackerShipped = (o.status||'').toLowerCase().trim()==='shipped' &&
+        o.carId && o.carId!=='SYSTEM' && !cryx_ids.has(o.carId);
+      return isSystemAssigned || isTrackerShipped;
     });
 
     if(lL.length||systemShipped.length){
@@ -1116,17 +1122,22 @@ function renderTab1(){
       d+=lL.map(c=>detailRow(c,'loaded')).join('');
       d+=systemShipped.map(o=>{
         const isSystemCarShipped = true;
-        const etaStr = o.systemCarEta ? new Date(o.systemCarEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
-        const shipStr = o.systemShipDate ? new Date(o.systemShipDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+        const carLabel = (o.carId && o.carId!=='SYSTEM') ? o.carId : 'SYSTEM';
+        const etaStr = o.systemCarEta
+          ? new Date(o.systemCarEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+          : (o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—');
+        const shipStr = o.systemShipDate
+          ? new Date(o.systemShipDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
+          : (o.shipDate ? o.shipDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—');
         const safeOtm2 = String(o.otm||'').replace(/['"&<>]/g,c=>({'\'':'&#39;','"':'&quot;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
         return `<div class="drow" style="flex-wrap:wrap;padding:5px 12px;border-top:1px solid rgba(48,54,61,.45);background:rgba(63,185,80,.04);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
-            <div class="dr-id" style="color:var(--green);">SYSTEM</div>
+            <div class="dr-id" style="color:var(--green);font-size:10px;">${carLabel}</div>
             <div style="flex:1;font-size:11px;font-weight:600;color:var(--text);">${o.receiver||'—'}</div>
             <div style="font-size:10px;color:var(--muted);">→ ${o.destCity||'—'}</div>
             ${o.soNum?`<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);">SO# ${o.soNum}</div>`:''}
             <div style="font-size:10px;color:var(--muted);">Shipped: ${shipStr}</div>
-            <div class="dr-eta eta-nu">ETA: ${etaStr}</div>
+            <div class="dr-eta eta-nu">RDD: ${etaStr}</div>
             <button data-otm="${safeOtm2}"
               onclick="confirmDeliver(this.dataset.otm)"
               style="font-size:9px;background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:3px;padding:2px 7px;cursor:pointer;flex-shrink:0;">
