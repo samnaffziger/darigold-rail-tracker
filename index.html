@@ -1197,6 +1197,7 @@ function renderTab1(){
 
       // Build return ETA for every car in this loop (same logic as Supply Forecast)
       function getCarReturnEta(car){
+        try{
         const isConstructive = car.etaStr && (
           car.etaStr.toLowerCase().includes('constructive') ||
           car.etaStr.toLowerCase().includes('actual'));
@@ -1247,6 +1248,7 @@ function renderTab1(){
           return {date:null, label:'Unknown ETA', status:'unknown'};
         }
         return {date:null, label:'Unknown', status:'unknown'};
+        }catch(e){ console.warn('getCarReturnEta error for',car.id,':',e.message); return {date:null, label:'Unknown', status:'unknown'}; }
       }
 
       // All cars in this loop, sorted: available now → inbound → loaded → unknown
