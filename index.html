@@ -1351,6 +1351,10 @@ function renderTab1(){
           }
         }
 
+        // Show return ETA for currently assigned car
+        const assignedCarObj = assignedCar && assignedCar!=='SYSTEM' ? loopCars.find(c=>c.id===assignedCar) : null;
+        const assignedEtaNote = assignedCarObj ? ` · ${assignedCarObj.returnEta.label}` : '';
+
         d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;width:90px;">OTM# ${o.otm||'—'}</div>
@@ -1528,7 +1532,7 @@ async function renderShipHistory(){
       ⚠️ <strong>History limited</strong> — only one report has been uploaded. Shipment counts will grow more accurate as daily reports accumulate.
     </div>`;
   }
-}
+} // end renderTab1
 
 // ── TAB 3 ──
 function renderTab3(){
@@ -2830,23 +2834,27 @@ async function assignCar(otm, carId, site){
   if(!otm) return;
   const otmStr = String(otm).trim();
   const order = ORDER_DATA.find(o=>String(o.otm).trim()===otmStr);
-  if(!order){ console.warn('assignCar: order not found for OTM', otm, 'available:', ORDER_DATA.map(o=>o.otm)); return; }
+  if(!order){ console.warn('assignCar: order not found for OTM', otm); renderTab1(); return; }
   order.carId = carId || null;
   order.systemCarEta = (carId==='SYSTEM') ? (order.systemCarEta||null) : null;
+  order.systemShipped = (carId==='SYSTEM') ? (order.systemShipped||false) : false;
+  // Re-render immediately with local state — don't wait for Supabase
+  renderTab1();
   try{
     if(carId){
-      await supabase.from('order_assignments').upsert({
+      const {error} = await supabase.from('order_assignments').upsert({
         otm_number: otmStr,
         car_id: carId,
-        site: site,
+        site: site||'',
         system_car_eta: carId==='SYSTEM' ? (order.systemCarEta||null) : null,
         assigned_at: new Date().toISOString()
       },{onConflict:'otm_number'});
+      if(error) console.warn('Assignment save failed:', error.message);
     } else {
-      await supabase.from('order_assignments').delete().eq('otm_number', otmStr);
+      const {error} = await supabase.from('order_assignments').delete().eq('otm_number', otmStr);
+      if(error) console.warn('Assignment delete failed:', error.message);
     }
-  }catch(e){ console.warn('Assignment save failed:', e.message); }
-  renderTab1();
+  }catch(e){ console.warn('Assignment error:', e.message); }
 }
 
 // Load saved assignments and merge into ORDER_DATA
