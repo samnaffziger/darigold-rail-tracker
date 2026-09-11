@@ -1137,12 +1137,16 @@ function renderTab1(){
     // System car / foreign car shipped orders — show in loaded outbound section
     // Includes: SYSTEM assignments + any shipped order whose car isn't in ALL_CARS (ARMN, etc.)
     const cryx_ids = new Set(ALL_CARS.map(c=>c.id));
+    const loadedCryx = new Set(ALL_CARS.filter(c=>c.section==='LOADED').map(c=>c.id));
     const systemShipped = ORDER_DATA.filter(o=>{
       if(shipperToLoop(o.shipper)!==site) return false;
       if(o.delivered) return false;
+      // System car manually marked shipped
       const isSystemAssigned = o.carId==='SYSTEM' && o.systemShipped;
+      // Tracker says shipped but car is not currently showing as LOADED in daily report
+      // (covers ARMN cars + CRYX cars that have already been delivered and gone empty)
       const isTrackerShipped = (o.status||'').toLowerCase().trim()==='shipped' &&
-        o.carId && o.carId!=='SYSTEM' && !cryx_ids.has(o.carId);
+        o.carId && o.carId!=='SYSTEM' && !loadedCryx.has(o.carId);
       return isSystemAssigned || isTrackerShipped;
     });
 
