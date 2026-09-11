@@ -1276,6 +1276,7 @@ function renderTab1(){
 
       d+=`<div class="dsec-lbl" style="border-top:2px solid var(--accent);margin-top:4px;">📦 Unshipped Orders (${unshippedOrders.length})</div>`;
       unshippedOrders.forEach(o=>{
+        try{
         const expStr = o.expShip ? o.expShip.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
         const rddStr = o.rdd ? o.rdd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
         const daysToExp = o.expShip ? Math.round((o.expShip-today)/86400000) : null;
@@ -1328,32 +1329,34 @@ function renderTab1(){
 
         // Check for mismatch: daily report shows this car as LOADED (shipped) but order is still unshipped
         let mismatchHtml = '';
-        if(assignedCar && assignedCar !== 'SYSTEM'){
-          const liveCarData = ALL_CARS.find(c=>c.id===assignedCar);
-          if(liveCarData && liveCarData.section==='LOADED' && liveCarData.waybillDate){
-            const wbStr = liveCarData.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-            mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
-              background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
-              <span>⚠️</span>
-              <span style="color:var(--yellow);font-weight:600;">Daily report shows this car shipped ${wbStr}.</span>
-              <span style="color:var(--muted);">Update Master Rail Tracker to mark as Shipped.</span>
-            </div>`;
-          } else if(liveCarData && liveCarData.section==='EMPTY'){
-            const emptyDesc = liveCarData.emptyStatus==='onsite'?'on-site empty':
-                              liveCarData.emptyStatus==='waiting'?'waiting to be placed':
-                              liveCarData.emptyStatus==='inbound'?'empty, heading back':'empty';
-            mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
-              background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
-              <span>⚠️</span>
-              <span style="color:var(--yellow);font-weight:600;">Daily report shows ${assignedCar} is ${emptyDesc}.</span>
-              <span style="color:var(--muted);">Update Master Rail Tracker.</span>
-            </div>`;
+        try{
+          if(assignedCar && assignedCar !== 'SYSTEM'){
+            const liveCarData = ALL_CARS.find(c=>c.id===assignedCar);
+            if(liveCarData && liveCarData.section==='LOADED' && liveCarData.waybillDate){
+              const wbStr = liveCarData.waybillDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
+                background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
+                <span>⚠️</span>
+                <span style="color:var(--yellow);font-weight:600;">Daily report shows this car shipped ${wbStr}.</span>
+                <span style="color:var(--muted);">Update Master Rail Tracker to mark as Shipped.</span>
+              </div>`;
+            } else if(liveCarData && liveCarData.section==='EMPTY'){
+              const emptyDesc = liveCarData.emptyStatus==='onsite'?'on-site empty':
+                                liveCarData.emptyStatus==='waiting'?'waiting to be placed':
+                                liveCarData.emptyStatus==='inbound'?'empty, heading back':'empty';
+              mismatchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding:5px 8px;
+                background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:4px;font-size:10px;">
+                <span>⚠️</span>
+                <span style="color:var(--yellow);font-weight:600;">Daily report shows ${assignedCar} is ${emptyDesc}.</span>
+                <span style="color:var(--muted);">Update Master Rail Tracker.</span>
+              </div>`;
+            }
           }
-        }
+        }catch(mErr){ console.warn('mismatch check error:', mErr.message); }
 
         // Show return ETA for currently assigned car
         const assignedCarObj = assignedCar && assignedCar!=='SYSTEM' ? loopCars.find(c=>c.id===assignedCar) : null;
-        const assignedEtaNote = assignedCarObj ? ` · ${assignedCarObj.returnEta.label}` : '';
+        const assignedEtaNote = (assignedCarObj && assignedCarObj.returnEta) ? ` · ${assignedCarObj.returnEta.label}` : '';
 
         d+=`<div class="drow" style="flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(48,54,61,.45);">
           <div style="display:flex;align-items:center;width:100%;gap:8px;flex-wrap:wrap;">
@@ -1416,6 +1419,12 @@ function renderTab1(){
             `}
           </div>` : ''}
         </div>`;
+        }catch(orderErr){
+          console.warn('Order render error OTM', o.otm, ':', orderErr.message);
+          d+=`<div class="drow" style="padding:5px 12px;font-size:10px;color:var(--red);">
+            OTM# ${o.otm||'—'} — display error: ${orderErr.message}
+          </div>`;
+        }
       });
     }
 
