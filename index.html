@@ -1124,10 +1124,24 @@ function renderTab1(){
   const grid=document.getElementById('loops-grid');
   grid.innerHTML='';
   SITES.forEach(site=>{
+    const cryx_ids = new Set(ALL_CARS.map(c=>c.id));
+    const loadedCryx = new Set(ALL_CARS.filter(c=>c.section==='LOADED').map(c=>c.id));
+
+    // Cars committed to a SHIPPED order — hide from empty sections and dropdown options
+    const committedCars = new Set(
+      ORDER_DATA
+        .filter(o=>{
+          if(shipperToLoop(o.shipper)!==site) return false;
+          if(!o.carId || o.carId==='SYSTEM') return false;
+          return (o.status||'').toLowerCase().trim()==='shipped';
+        })
+        .map(o=>o.carId)
+    );
+
     const lL=ALL_CARS.filter(c=>c.loop===site&&c.section==='LOADED');
-    const lO=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite');
-    const lW=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='waiting');
-    const lH=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='held');
+    const lO=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='onsite'&&!committedCars.has(c.id));
+    const lW=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='waiting'&&!committedCars.has(c.id));
+    const lH=ALL_CARS.filter(c=>c.loop===site&&c.emptyStatus==='held'&&!committedCars.has(c.id));
     const lI=ALL_CARS.filter(c=>c.loop===site&&c.section==='EMPTY'&&c.emptyStatus==='inbound');
     const lS=SHIP_HISTORY_7D.filter(c=>c.loop===site);
     const tot=lL.length+lO.length+lW.length+lH.length+lI.length;
@@ -1135,9 +1149,7 @@ function renderTab1(){
     const hasWarn=!hasCrit&&(lO.some(c=>c.dwell>=7)||lW.length>0||lH.length>0);
     let d='';
     // System car / foreign car shipped orders — show in loaded outbound section
-    // Includes: SYSTEM assignments + any shipped order whose car isn't in ALL_CARS (ARMN, etc.)
-    const cryx_ids = new Set(ALL_CARS.map(c=>c.id));
-    const loadedCryx = new Set(ALL_CARS.filter(c=>c.section==='LOADED').map(c=>c.id));
+
     const systemShipped = ORDER_DATA.filter(o=>{
       if(shipperToLoop(o.shipper)!==site) return false;
       if(o.delivered) return false;
@@ -1305,6 +1317,7 @@ function renderTab1(){
         // Filter loopCars: exclude taken cars (but keep the currently assigned car for this order)
         function isAvailable(c){
           if(c.id===assignedCar) return true; // always show own assignment
+          if(committedCars.has(c.id)) return false; // committed to a shipped order
           return !takenCars.has(c.id);
         }
 
